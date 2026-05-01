@@ -1,0 +1,24 @@
+name: luxand_liveness
+description: End-to-end liveness detection using randomised face challenges + Luxand Cloud API. Returns a result with isReal, score, and the captured image file.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_liveness_detection_randomized_plugin:
+    path: packages/flutter_liveness_detection_randomized_plugin
+  http: ^1.2.2
+  image: ^4.1.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
