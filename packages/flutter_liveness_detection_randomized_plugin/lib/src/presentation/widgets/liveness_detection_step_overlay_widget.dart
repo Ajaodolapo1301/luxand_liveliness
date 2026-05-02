@@ -124,8 +124,8 @@ class LivenessDetectionStepOverlayWidgetState
   }
 
   Future<void> _handleCompletion() async {
+    _showLoader();
     _updateState();
-    await Future.delayed(const Duration(milliseconds: 500));
     widget.onCompleted();
   }
 

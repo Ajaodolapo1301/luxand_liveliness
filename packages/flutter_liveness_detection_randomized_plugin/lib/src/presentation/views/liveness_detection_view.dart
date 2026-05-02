@@ -603,10 +603,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
           steps: _getStepsToUse(),
           showCurrentStep: widget.config.showCurrentStep,
           theme: widget.config.theme,
-          onCompleted: () => Future.delayed(
-            const Duration(milliseconds: 500),
-            () => _takePicture(),
-          ),
+          onCompleted: _takePicture,
         ),
       ],
     );
