@@ -35,7 +35,7 @@ class FlutterLivenessDetectionRandomizedPlugin {
     }
 
     if (!context.mounted) return null;
-    
+
     final String? capturedFacePath = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => LivenessDetectionView(

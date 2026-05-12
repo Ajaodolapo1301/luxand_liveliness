@@ -35,6 +35,10 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   Size? _screenSize;
   List<LivenessDetectionStepItem> _shuffledSteps = [];
 
+  int _delayedStableConsecutiveFrames = 0;
+  Timer? _delayedFaceCaptureTimer;
+  int? _delayedFaceCaptureSecondsRemaining;
+
   // Brightness Screen
   Future<void> setApplicationBrightness(double brightness) async {
     try {
@@ -211,6 +215,8 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   void dispose() {
     _timerToDetectFace?.cancel();
     _timerToDetectFace = null;
+    _delayedFaceCaptureTimer?.cancel();
+    _delayedFaceCaptureTimer = null;
     _cameraController?.dispose();
     
     if (widget.config.isEnableMaxBrightness) {
@@ -280,8 +286,55 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   void _startFaceDetectionTimer() {
     _timerToDetectFace = Timer(
       Duration(seconds: widget.config.durationLivenessVerify ?? 45),
-      () => _onDetectionCompleted(imgToReturn: null),
+      () => _onDetectionCompleted(imgPath: null),
     );
+  }
+
+  void _cancelDelayedFaceCapture() {
+    _delayedFaceCaptureTimer?.cancel();
+    _delayedFaceCaptureTimer = null;
+    if (!mounted) return;
+    if (_delayedFaceCaptureSecondsRemaining != null) {
+      setState(() => _delayedFaceCaptureSecondsRemaining = null);
+    }
+  }
+
+  void _startDelayedFaceCountdown() {
+    _delayedFaceCaptureTimer?.cancel();
+    final secs = widget.config.delayedFaceCaptureAfterSeconds;
+    if (secs <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _faceDetectedState) _takePicture();
+      });
+      return;
+    }
+    var remaining = secs;
+    if (!mounted) return;
+    setState(() => _delayedFaceCaptureSecondsRemaining = remaining);
+    _delayedFaceCaptureTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      remaining--;
+      if (remaining <= 0) {
+        t.cancel();
+        _delayedFaceCaptureTimer = null;
+        setState(() => _delayedFaceCaptureSecondsRemaining = null);
+        if (_faceDetectedState) {
+          _takePicture();
+        }
+      } else {
+        setState(() => _delayedFaceCaptureSecondsRemaining = remaining);
+      }
+    });
+  }
+
+  String _delayedFaceEmptyInstruction() {
+    final r = _delayedFaceCaptureSecondsRemaining;
+    final base = widget.config.delayedFaceCaptureInstruction;
+    if (r == null) return base;
+    return '$base\nPhoto in ${r}s';
   }
 
   Future<void> _processCameraImage(CameraImage cameraImage) async {
@@ -376,6 +429,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
   Future<void> _processImage(InputImage inputImage) async {
     if (_isBusy) return;
+    if (_isTakingPicture) return;
     _isBusy = true;
 
     final faces = await MachineLearningKitHelper.instance.processInputImage(
@@ -390,17 +444,33 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
           _isFaceInOval(faces.first, imageSize, rotation);
 
       if (faces.isEmpty || !faceInOval) {
+        _delayedStableConsecutiveFrames = 0;
+        _cancelDelayedFaceCapture();
         _resetSteps();
         if (mounted) setState(() => _faceDetectedState = false);
       } else {
         if (mounted) setState(() => _faceDetectedState = true);
-        final currentIndex = _stepsKey.currentState?.currentIndex ?? 0;
-        List<LivenessDetectionStepItem> currentSteps = _getStepsToUse();
-        if (currentIndex < currentSteps.length) {
-          _detectFace(
-            face: faces.first,
-            step: currentSteps[currentIndex].step,
-          );
+
+        if (widget.config.enableDelayedFaceCapture) {
+          if (_delayedFaceCaptureTimer?.isActive ?? false) {
+            // Countdown already running; keep holding position.
+          } else {
+            _delayedStableConsecutiveFrames++;
+            final need = widget.config.delayedFaceCaptureStableFrames;
+            if (_delayedStableConsecutiveFrames >= need) {
+              _delayedStableConsecutiveFrames = 0;
+              _startDelayedFaceCountdown();
+            }
+          }
+        } else {
+          final currentIndex = _stepsKey.currentState?.currentIndex ?? 0;
+          List<LivenessDetectionStepItem> currentSteps = _getStepsToUse();
+          if (currentIndex < currentSteps.length) {
+            _detectFace(
+              face: faces.first,
+              step: currentSteps[currentIndex].step,
+            );
+          }
         }
       }
     } else {
@@ -456,6 +526,8 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     try {
       if (_cameraController == null || _isTakingPicture) return;
 
+      _cancelDelayedFaceCapture();
+
       if (mounted) setState(() => _isTakingPicture = true);
       await _cameraController?.stopImageStream();
 
@@ -468,28 +540,19 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
       final XFile? finalImage = await _compressImage(clickedImage);
 
-      debugPrint('Final image path: ${finalImage?.path}');
-      _onDetectionCompleted(imgToReturn: finalImage);
+      if (mounted) setState(() => _isTakingPicture = false);
+      _onDetectionCompleted(imgPath: finalImage?.path);
     } catch (e) {
-      debugPrint('Error taking picture: $e');
       if (mounted) setState(() => _isTakingPicture = false);
       _startLiveFeed();
     }
   }
 
-  void _onDetectionCompleted({XFile? imgToReturn}) async {
-    final String? imgPath = imgToReturn?.path;
-
-    if (imgPath != null) {
-      final File imageFile = File(imgPath);
-      final int fileSizeInBytes = await imageFile.length();
-      final double sizeInKb = fileSizeInBytes / 1024;
-      debugPrint('Image result size : ${sizeInKb.toStringAsFixed(2)} KB');
-    }
+  void _onDetectionCompleted({String? imgPath}) async {
     if (widget.config.isEnableSnackBar) {
       final snackBar = SnackBar(
         content: Text(
-          imgToReturn == null
+          imgPath == null
               ? 'Verification of liveness detection failed, please try again. (Exceeds time limit ${widget.config.durationLivenessVerify ?? 45} second.)'
               : 'Verification of liveness detection success!',
         ),
@@ -530,6 +593,11 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
   /// Initialize and shuffle steps fresh each time
   void _initializeShuffledSteps() {
+    if (widget.config.enableDelayedFaceCapture) {
+      _shuffledSteps = [];
+      return;
+    }
+
     List<LivenessDetectionStepItem> baseSteps;
     
     if (widget.config.useCustomizedLabel && widget.config.customizedLabel != null) {
@@ -604,6 +672,16 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
           showCurrentStep: widget.config.showCurrentStep,
           theme: widget.config.theme,
           onCompleted: _takePicture,
+          onManualSnap: _takePicture,
+          enableManualSnapFallback: widget.config.enableManualSnapFallback &&
+              !widget.config.enableDelayedFaceCapture,
+          manualSnapAfterSeconds: widget.config.manualSnapAfterSeconds,
+          manualSnapLabel: widget.config.manualSnapLabel,
+          manualSnapRequireFaceDetected:
+              widget.config.manualSnapRequireFaceDetected,
+          emptyStepsInstruction: widget.config.enableDelayedFaceCapture
+              ? _delayedFaceEmptyInstruction()
+              : '',
         ),
       ],
     );

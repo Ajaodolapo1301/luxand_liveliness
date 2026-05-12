@@ -5,6 +5,7 @@ import 'package:flutter_liveness_detection_randomized_plugin/src/presentation/wi
 class LivenessDetectionStepOverlayWidget extends StatefulWidget {
   final List<LivenessDetectionStepItem> steps;
   final VoidCallback onCompleted;
+  final VoidCallback onManualSnap;
   final Widget camera;
   final CameraController? cameraController;
   final bool isFaceDetected;
@@ -14,10 +15,19 @@ class LivenessDetectionStepOverlayWidget extends StatefulWidget {
   final int? duration;
   final LivenessDetectionTheme? theme;
 
+  final bool enableManualSnapFallback;
+  final int manualSnapAfterSeconds;
+  final String manualSnapLabel;
+  final bool manualSnapRequireFaceDetected;
+
+  /// Shown when [steps] is empty (e.g. delayed face-only capture).
+  final String emptyStepsInstruction;
+
   const LivenessDetectionStepOverlayWidget({
     super.key,
     required this.steps,
     required this.onCompleted,
+    required this.onManualSnap,
     required this.camera,
     required this.cameraController,
     required this.isFaceDetected,
@@ -26,6 +36,11 @@ class LivenessDetectionStepOverlayWidget extends StatefulWidget {
     this.showDurationUiText = false,
     this.duration,
     this.theme,
+    this.enableManualSnapFallback = false,
+    this.manualSnapAfterSeconds = 10,
+    this.manualSnapLabel = 'Snap',
+    this.manualSnapRequireFaceDetected = true,
+    this.emptyStepsInstruction = '',
   });
 
   @override
@@ -45,6 +60,9 @@ class LivenessDetectionStepOverlayWidgetState
   bool _pageViewVisible = false;
   Timer? _countdownTimer;
   int _remainingDuration = 0;
+
+  Timer? _manualSnapTimer;
+  int _elapsedSecondsOnDetection = 0;
 
   // Oval dimensions
   static const double _ovalW = 280;
@@ -70,8 +88,11 @@ class LivenessDetectionStepOverlayWidgetState
       widget.theme?.faceNotFoundLabel ?? 'Position your face in the frame';
   String get _backLabel => widget.theme?.backLabel ?? 'Cancel';
 
-  double _getStepIncrement(int stepLength) => 100 / stepLength;
-  String get stepCounter => '$_currentIndex/${widget.steps.length}';
+  double _getStepIncrement(int stepLength) =>
+      stepLength <= 0 ? 100 : 100 / stepLength;
+  String get stepCounter => widget.steps.isEmpty
+      ? ''
+      : '$_currentIndex/${widget.steps.length}';
 
   @override
   void initState() {
@@ -81,6 +102,7 @@ class LivenessDetectionStepOverlayWidgetState
       _remainingDuration = widget.duration!;
       _startCountdownTimer();
     }
+    _startManualSnapTimerIfNeeded();
     WidgetsBinding.instance.addPostFrameCallback(
         (_) => setState(() => _pageViewVisible = true));
   }
@@ -95,15 +117,33 @@ class LivenessDetectionStepOverlayWidgetState
     });
   }
 
+  void _startManualSnapTimerIfNeeded() {
+    if (!widget.enableManualSnapFallback) return;
+    _manualSnapTimer?.cancel();
+    _manualSnapTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _elapsedSecondsOnDetection++);
+    });
+  }
+
+  bool get _isManualSnapVisible =>
+      widget.enableManualSnapFallback &&
+      _elapsedSecondsOnDetection >= widget.manualSnapAfterSeconds;
+
+  bool get _isManualSnapEnabled =>
+      !widget.manualSnapRequireFaceDetected || widget.isFaceDetected;
+
   @override
   void dispose() {
     _pageController.dispose();
     _countdownTimer?.cancel();
+    _manualSnapTimer?.cancel();
     super.dispose();
   }
 
   Future<void> nextPage() async {
     if (_isLoading) return;
+    if (widget.steps.isEmpty) return;
     if (_currentIndex + 1 <= widget.steps.length - 1) {
       await _handleNextStep();
     } else {
@@ -214,7 +254,7 @@ class LivenessDetectionStepOverlayWidgetState
                     style: TextStyle(
                         color: _statusTextColor, fontWeight: FontWeight.bold),
                   ),
-                if (widget.showCurrentStep)
+                if (widget.showCurrentStep && stepCounter.isNotEmpty)
                   Text(stepCounter,
                       style: TextStyle(color: _statusTextColor, fontSize: 15)),
               ],
@@ -258,34 +298,88 @@ class LivenessDetectionStepOverlayWidgetState
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_pageViewVisible)
-                AbsorbPointer(
-                  absorbing: true,
-                  child: SizedBox(
-                    height: 80,
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: widget.steps.length,
-                      itemBuilder: (_, index) => Container(
-                        decoration: BoxDecoration(
-                          color: _instructionCardColor,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        alignment: Alignment.center,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 12),
-                        child: Text(
-                          widget.steps[index].title,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: _instructionTextColor,
-                            fontSize: _instructionFontSize,
-                            fontWeight: FontWeight.w600,
+                _isManualSnapVisible
+                    ? Opacity(
+                        opacity: _isManualSnapEnabled ? 1 : 0.5,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _isManualSnapEnabled
+                              ? widget.onManualSnap
+                              : null,
+                          child: Container(
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: _instructionCardColor,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            child: Text(
+                              widget.manualSnapLabel,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: _instructionTextColor,
+                                fontSize: _instructionFontSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ),
+                      )
+                    : AbsorbPointer(
+                        absorbing: true,
+                        child: SizedBox(
+                          height: 80,
+                          child: widget.steps.isEmpty
+                              ? Container(
+                                  decoration: BoxDecoration(
+                                    color: _instructionCardColor,
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  alignment: Alignment.center,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 12,
+                                  ),
+                                  child: Text(
+                                    widget.emptyStepsInstruction,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: _instructionTextColor,
+                                      fontSize: _instructionFontSize,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                )
+                              : PageView.builder(
+                                  controller: _pageController,
+                                  itemCount: widget.steps.length,
+                                  itemBuilder: (_, index) => Container(
+                                    decoration: BoxDecoration(
+                                      color: _instructionCardColor,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    alignment: Alignment.center,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 12,
+                                    ),
+                                    child: Text(
+                                      widget.steps[index].title,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: _instructionTextColor,
+                                        fontSize: _instructionFontSize,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
                       ),
-                    ),
-                  ),
-                ),
               const SizedBox(height: 12),
               CupertinoActivityIndicator(
                 color: _isLoading ? _instructionTextColor : Colors.transparent,

@@ -12,10 +12,27 @@ class LuxandLiveness {
   ///
   /// [apiKey]  – your Luxand Cloud API token.
   /// [theme]   – optional UI customisation; falls back to a dark purple theme.
+  ///
+  /// [enableManualSnapFallback] – when `true`, after [manualSnapAfterSeconds]
+  /// the bottom instruction card shows **Snap** (tap to capture) instead of
+  /// the challenge text, for users who struggle on their device. Defaults to
+  /// `false`.
+  ///
+  /// [enableDelayedFaceCapture] – when `true`, skips challenges: once the face
+  /// is stable in the oval, waits [delayedFaceCaptureAfterSeconds] then takes
+  /// one photo (timer resets if the face leaves the oval).
   static Future<LuxandLivenessResult?> verify({
     required BuildContext context,
     required String apiKey,
     LivenessDetectionTheme? theme,
+    bool enableManualSnapFallback = false,
+    int manualSnapAfterSeconds = 10,
+    String manualSnapLabel = 'Snap',
+    bool manualSnapRequireFaceDetected = true,
+    bool enableDelayedFaceCapture = false,
+    int delayedFaceCaptureAfterSeconds = 3,
+    int delayedFaceCaptureStableFrames = 2,
+    String delayedFaceCaptureInstruction = 'Keep your head in the frame',
   }) async {
     final effectiveTheme = theme ??
         const LivenessDetectionTheme(
@@ -24,7 +41,7 @@ class LuxandLiveness {
           ringTrackColor: Color(0xFF2A2A2A),
           instructionCardColor: Color(0xFF1A1A2E),
           instructionTextColor: Colors.white,
-          instructionFontSize: 22,
+          instructionFontSize: 14,
           statusTextColor: Colors.white70,
           faceFoundLabel: 'Face detected — follow the instructions',
           faceNotFoundLabel: 'Position your face in the frame',
@@ -32,9 +49,8 @@ class LuxandLiveness {
         );
 
     // Step 1: Run liveness challenges
-    final String? capturedImagePath = await FlutterLivenessDetectionRandomizedPlugin
-        .instance
-        .livenessDetection(
+    final String? capturedImagePath =
+        await FlutterLivenessDetectionRandomizedPlugin.instance.livenessDetection(
       context: context,
       config: LivenessDetectionConfig(
         cameraResolution: ResolutionPreset.high,
@@ -57,15 +73,24 @@ class LuxandLiveness {
         showDurationUiText: true,
         showCurrentStep: true,
         theme: effectiveTheme,
+        enableManualSnapFallback: enableManualSnapFallback,
+        manualSnapAfterSeconds: manualSnapAfterSeconds,
+        manualSnapLabel: manualSnapLabel,
+        manualSnapRequireFaceDetected: manualSnapRequireFaceDetected,
+        enableDelayedFaceCapture: enableDelayedFaceCapture,
+        delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
+        delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
+        delayedFaceCaptureInstruction: delayedFaceCaptureInstruction,
       ),
     );
 
     // User cancelled
     if (capturedImagePath == null) return null;
 
+    final imageFile = File(capturedImagePath);
+
     // Step 2: Verify with Luxand Cloud API
     try {
-      final imageFile = File(capturedImagePath);
       final api = LuxandApi(apiKey: apiKey);
       final response = await api.checkLiveness(imageFile);
 
