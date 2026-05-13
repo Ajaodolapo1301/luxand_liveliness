@@ -56,7 +56,7 @@ dependencies:
 ## Usage 🚀
 
 ```dart
-final String? response = await FlutterLivenessDetectionRandomizedPlugin.instance.livenessDetection(
+final List<String>? response = await FlutterLivenessDetectionRandomizedPlugin.instance.livenessDetection(
   context: context,
   config: LivenessDetectionConfig(
     // Camera & Image Settings
@@ -90,6 +90,12 @@ final String? response = await FlutterLivenessDetectionRandomizedPlugin.instance
     enableCooldownOnFailure: true, // Enable cooldown after failures
     maxFailedAttempts: 3, // Failed attempts before cooldown
     cooldownMinutes: 10, // Cooldown duration
+
+    // Optional fallback
+    enableManualSnapFallback: true, // After delay, instruction card becomes tappable "Snap"
+    manualSnapAfterSeconds: 10, // Seconds before replacing challenge text with Snap
+    manualSnapLabel: 'Snap', // Text on the instruction card (tap to capture)
+    manualSnapRequireFaceDetected: true, // Disable tap until face detected
   ),
 );
 ```
@@ -120,6 +126,12 @@ final String? response = await FlutterLivenessDetectionRandomizedPlugin.instance
 - `enableCooldownOnFailure`: Enable cooldown after failed attempts (default: true)
 - `maxFailedAttempts`: Number of failures before cooldown (default: 3)
 - `cooldownMinutes`: Cooldown duration in minutes (default: 10)
+
+### Optional Fallback
+- `enableManualSnapFallback`: After a delay, replace the challenge instruction card with a tappable **Snap** label (default: false)
+- `manualSnapAfterSeconds`: Seconds before that swap (default: 10)
+- `manualSnapLabel`: Text shown on the card (default: "Snap")
+- `manualSnapRequireFaceDetected`: Disable tap until a face is detected (default: true)
 
 ## Cooldown Feature
 The plugin includes an automatic cooldown mechanism to prevent brute force attempts:

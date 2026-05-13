@@ -5,7 +5,6 @@ import 'services/luxand_api.dart';
 class LuxandLiveness {
   LuxandLiveness._();
 
-  /// Runs the full liveness flow:
   /// 1. Launches face challenge screen (blink + smile).
   /// 2. Sends the captured image to the Luxand Cloud API.
   /// 3. Returns a [LuxandLivenessResult], or `null` if the user cancelled.
@@ -34,7 +33,8 @@ class LuxandLiveness {
     int delayedFaceCaptureStableFrames = 2,
     String delayedFaceCaptureInstruction = 'Keep your head in the frame',
   }) async {
-    final effectiveTheme = theme ??
+    final effectiveTheme =
+        theme ??
         const LivenessDetectionTheme(
           backgroundColor: Color(0xFF0A0A0A),
           ringProgressColor: Colors.deepPurple,
@@ -50,39 +50,40 @@ class LuxandLiveness {
 
     // Step 1: Run liveness challenges
     final String? capturedImagePath =
-        await FlutterLivenessDetectionRandomizedPlugin.instance.livenessDetection(
-      context: context,
-      config: LivenessDetectionConfig(
-        cameraResolution: ResolutionPreset.high,
-        imageQuality: 90,
-        isEnableMaxBrightness: true,
-        durationLivenessVerify: 45,
-        shuffleListWithSmileLast: false,
-        useCustomizedLabel: true,
-        customizedLabel: LivenessDetectionLabelModel(
-          blink: 'Blink 2-3 times',
-          smile: 'Smile',
-          lookLeft: '',
-          lookRight: '',
-          lookUp: '',
-          lookDown: '',
-        ),
-        enableCooldownOnFailure: true,
-        maxFailedAttempts: 3,
-        cooldownMinutes: 10,
-        showDurationUiText: true,
-        showCurrentStep: true,
-        theme: effectiveTheme,
-        enableManualSnapFallback: enableManualSnapFallback,
-        manualSnapAfterSeconds: manualSnapAfterSeconds,
-        manualSnapLabel: manualSnapLabel,
-        manualSnapRequireFaceDetected: manualSnapRequireFaceDetected,
-        enableDelayedFaceCapture: enableDelayedFaceCapture,
-        delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
-        delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
-        delayedFaceCaptureInstruction: delayedFaceCaptureInstruction,
-      ),
-    );
+        await FlutterLivenessDetectionRandomizedPlugin.instance
+            .livenessDetection(
+              context: context,
+              config: LivenessDetectionConfig(
+                cameraResolution: ResolutionPreset.high,
+                imageQuality: 90,
+                isEnableMaxBrightness: true,
+                durationLivenessVerify: 45,
+                shuffleListWithSmileLast: false,
+                useCustomizedLabel: true,
+                customizedLabel: LivenessDetectionLabelModel(
+                  blink: 'Blink 2-3 times',
+                  smile: 'Smile',
+                  lookLeft: '',
+                  lookRight: '',
+                  lookUp: '',
+                  lookDown: '',
+                ),
+                enableCooldownOnFailure: true,
+                maxFailedAttempts: 3,
+                cooldownMinutes: 10,
+                showDurationUiText: true,
+                showCurrentStep: true,
+                theme: effectiveTheme,
+                enableManualSnapFallback: enableManualSnapFallback,
+                manualSnapAfterSeconds: manualSnapAfterSeconds,
+                manualSnapLabel: manualSnapLabel,
+                manualSnapRequireFaceDetected: manualSnapRequireFaceDetected,
+                enableDelayedFaceCapture: enableDelayedFaceCapture,
+                delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
+                delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
+                delayedFaceCaptureInstruction: delayedFaceCaptureInstruction,
+              ),
+            );
 
     // User cancelled
     if (capturedImagePath == null) return null;
