@@ -5,6 +5,7 @@ import 'package:flutter_liveness_detection_randomized_plugin/src/models/liveness
 
 class LivenessCooldownService {
   static const String _cooldownKey = 'liveness_detection_cooldown';
+  static const String _remainingTimeKey = 'cooldown_remaining_time';
   int _maxFailedAttempts = 3;
   int _cooldownMinutes = 10;
 
@@ -88,6 +89,14 @@ class LivenessCooldownService {
 
   Future<LivenessDetectionCooldown> recordSuccessfulAttempt() async {
     return await _resetCooldown();
+  }
+
+  /// Clears persisted cooldown state (e.g. when cooldown is disabled).
+  Future<void> clearCooldown() async {
+    await _resetCooldown();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_cooldownKey);
+    await prefs.remove(_remainingTimeKey);
   }
 
   Future<LivenessDetectionCooldown> _resetCooldown() async {

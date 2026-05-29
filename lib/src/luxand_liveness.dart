@@ -68,7 +68,6 @@ class LuxandLiveness {
                   lookUp: '',
                   lookDown: '',
                 ),
-                enableCooldownOnFailure: false,
                 showDurationUiText: true,
                 showCurrentStep: true,
                 theme: effectiveTheme,
