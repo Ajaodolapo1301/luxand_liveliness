@@ -59,7 +59,7 @@ class LivenessDetectionConfig {
     this.isEnableMaxBrightness = true,
     this.imageQuality = 100,
     this.cameraResolution = ResolutionPreset.high,
-    this.enableCooldownOnFailure = true,
+    this.enableCooldownOnFailure = false,
     this.maxFailedAttempts = 3,
     this.cooldownMinutes = 10,
     this.isEnableSnackBar = true,

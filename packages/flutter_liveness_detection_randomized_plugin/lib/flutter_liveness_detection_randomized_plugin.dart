@@ -14,7 +14,9 @@ class FlutterLivenessDetectionRandomizedPlugin {
     required BuildContext context,
     required LivenessDetectionConfig config,
   }) async {
-    if (config.enableCooldownOnFailure) {
+    if (!config.enableCooldownOnFailure) {
+      await LivenessCooldownService.instance.clearCooldown();
+    } else {
       LivenessCooldownService.instance.configure(
         maxFailedAttempts: config.maxFailedAttempts,
         cooldownMinutes: config.cooldownMinutes,
