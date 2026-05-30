@@ -190,12 +190,16 @@ class MyApp extends StatelessWidget {
 
 ## Platform Setup
 
+Face detection uses [`face_detection_tflite`](https://pub.dev/packages/face_detection_tflite) (MediaPipe models). **ML Kit is not used.**
+
 ### Android
 Add camera permission to your `android/app/src/main/AndroidManifest.xml`:
 ```xml
 <uses-permission android:name="android.permission.CAMERA"/>
 ```
 Minimum SDK version: 23
+
+The plugin requests `ImageFormatGroup.yuv420` on Android for reliable frame decoding.
 
 ### iOS
 Add camera usage description to `ios/Runner/Info.plist`:

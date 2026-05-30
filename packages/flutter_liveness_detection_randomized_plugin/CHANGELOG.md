@@ -1,3 +1,20 @@
+# 1.2.0 🚀
+
+## BREAKING CHANGES
+- Removed **Google ML Kit** (`google_mlkit_face_detection`).
+- On-device face detection now uses **MediaPipe BlazeFace** via [`face_detection_tflite`](https://pub.dev/packages/face_detection_tflite).
+- Replaced ML Kit `Face` with plugin `DetectedFace`.
+
+## New
+- `MediaPipeFaceDetectorHelper` for live camera frames.
+- `LivenessDetectionConfig.faceDetectionMaxDim` and `faceDetectionFastMode`.
+- Android camera stream uses `ImageFormatGroup.yuv420` (recommended by `face_detection_tflite`).
+
+## Migration
+- Remove `google_mlkit_face_detection` from your app if you depended on it only through this plugin.
+- Run `flutter clean && flutter pub get` after upgrading (native deps changed).
+- Blink/smile challenges require `faceDetectionFastMode: false` (default).
+
 # 1.1.0 🚀
 
 ## BREAKING CHANGES
