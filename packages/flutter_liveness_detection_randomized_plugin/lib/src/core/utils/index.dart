@@ -1,1 +1,1 @@
-export 'machine_learning_kit_helper.dart';
+export 'media_pipe_face_detector_helper.dart';

@@ -50,6 +50,12 @@ class LivenessDetectionConfig {
   /// Bottom instruction while holding position (countdown is appended when active).
   final String delayedFaceCaptureInstruction;
 
+  /// Max dimension for MediaPipe face detection (lower = faster).
+  final int faceDetectionMaxDim;
+
+  /// MediaPipe mode: [fast] = bbox only; [standard] = bbox + mesh for blink/smile.
+  final bool faceDetectionFastMode;
+
   LivenessDetectionConfig({
     this.startWithInfoScreen = false,
     this.durationLivenessVerify = 45,
@@ -75,6 +81,8 @@ class LivenessDetectionConfig {
     this.delayedFaceCaptureAfterSeconds = 3,
     this.delayedFaceCaptureStableFrames = 2,
     this.delayedFaceCaptureInstruction = 'Keep your head in the frame',
+    this.faceDetectionMaxDim = 480,
+    this.faceDetectionFastMode = false,
   }) : assert(
          !useCustomizedLabel || customizedLabel != null,
          'customizedLabel must not be null when useCustomizedLabel is true',
@@ -84,5 +92,6 @@ class LivenessDetectionConfig {
        assert(
          !enableDelayedFaceCapture || delayedFaceCaptureStableFrames >= 1,
          'delayedFaceCaptureStableFrames must be >= 1 when enableDelayedFaceCapture is true',
-       );
+       ),
+       assert(faceDetectionMaxDim >= 128, 'faceDetectionMaxDim must be >= 128');
 }

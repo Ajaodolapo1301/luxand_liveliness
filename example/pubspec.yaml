@@ -1,0 +1,24 @@
+name: luxand_liveness_example
+description: Example app for luxand_liveness — camera challenges and Luxand Cloud verification.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  luxand_liveness:
+    path: ..
+  flutter_liveness_detection_randomized_plugin:
+    path: ../packages/flutter_liveness_detection_randomized_plugin
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

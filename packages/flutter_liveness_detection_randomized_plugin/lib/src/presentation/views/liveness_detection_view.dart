@@ -1,9 +1,11 @@
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter_liveness_detection_randomized_plugin/index.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/core/constants/liveness_detection_step_constant.dart';
+import 'package:face_detection_tflite/face_detection_tflite.dart' as mp;
 import 'package:collection/collection.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:image/image.dart' as img;
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 List<CameraDescription> availableCams = [];
@@ -218,7 +220,8 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     _delayedFaceCaptureTimer?.cancel();
     _delayedFaceCaptureTimer = null;
     _cameraController?.dispose();
-    
+    MediaPipeFaceDetectorHelper.instance.dispose();
+
     if (widget.config.isEnableMaxBrightness) {
       resetApplicationBrightness();
     }
@@ -271,11 +274,13 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
       widget.config.cameraResolution,
       enableAudio: false,
       imageFormatGroup: Platform.isAndroid
-          ? ImageFormatGroup.nv21
+          ? ImageFormatGroup.yuv420
           : ImageFormatGroup.bgra8888,
     );
 
-    _cameraController?.initialize().then((_) {
+    _cameraController?.initialize().then((_) async {
+      if (!mounted) return;
+      await MediaPipeFaceDetectorHelper.instance.ensureInitialized();
       if (!mounted) return;
       _cameraController?.startImageStream(_processCameraImage);
       setState(() {});
@@ -337,55 +342,71 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     return '$base\nPhoto in ${r}s';
   }
 
+  DeviceOrientation _effectiveDeviceOrientation() {
+    final controller = _cameraController;
+    if (controller != null && controller.value.isInitialized) {
+      return controller.value.deviceOrientation;
+    }
+    if (!mounted) return DeviceOrientation.portraitUp;
+    return MediaQuery.orientationOf(context) == Orientation.portrait
+        ? DeviceOrientation.portraitUp
+        : DeviceOrientation.landscapeLeft;
+  }
+
   Future<void> _processCameraImage(CameraImage cameraImage) async {
+    if (_isBusy) return;
+    if (_isTakingPicture) return;
+    _isBusy = true;
+
     final camera = availableCams[_cameraIndex];
-    final imageRotation = InputImageRotationValue.fromRawValue(
-      camera.sensorOrientation,
+    final mode = widget.config.faceDetectionFastMode
+        ? mp.FaceDetectionMode.fast
+        : mp.FaceDetectionMode.standard;
+    final maxDim = widget.config.faceDetectionMaxDim;
+    final deviceOrientation = _effectiveDeviceOrientation();
+    final isFrontCamera =
+        camera.lensDirection == CameraLensDirection.front;
+    final rotation = mp.rotationForFrame(
+      width: cameraImage.width,
+      height: cameraImage.height,
+      sensorOrientation: camera.sensorOrientation,
+      isFrontCamera: isFrontCamera,
+      deviceOrientation: deviceOrientation,
     );
-    if (imageRotation == null) return;
+    final detectionImageSize = mp.detectionSize(
+      width: cameraImage.width,
+      height: cameraImage.height,
+      rotation: rotation,
+      maxDim: maxDim,
+    );
+    final mirrorHorizontally = Platform.isAndroid && isFrontCamera;
 
-    InputImage? inputImage;
+    final faces = await MediaPipeFaceDetectorHelper.instance.processCameraImage(
+      cameraImage,
+      camera: camera,
+      deviceOrientation: deviceOrientation,
+      rotation: rotation,
+      mode: mode,
+      maxDim: maxDim,
+    );
 
-    if (Platform.isAndroid) {
-      if (cameraImage.format.group == ImageFormatGroup.nv21) {
-        inputImage = InputImage.fromBytes(
-          bytes: cameraImage.planes[0].bytes,
-          metadata: InputImageMetadata(
-            size: Size(
-              cameraImage.width.toDouble(),
-              cameraImage.height.toDouble(),
-            ),
-            rotation: imageRotation,
-            format: InputImageFormat.nv21,
-            bytesPerRow: cameraImage.planes[0].bytesPerRow,
-          ),
-        );
-      }
-    } else if (Platform.isIOS) {
-      if (cameraImage.format.group == ImageFormatGroup.bgra8888) {
-        inputImage = InputImage.fromBytes(
-          bytes: cameraImage.planes[0].bytes,
-          metadata: InputImageMetadata(
-            size: Size(
-              cameraImage.width.toDouble(),
-              cameraImage.height.toDouble(),
-            ),
-            rotation: imageRotation,
-            format: InputImageFormat.bgra8888,
-            bytesPerRow: cameraImage.planes[0].bytesPerRow,
-          ),
-        );
-      }
-    }
+    await _processDetectedFaces(
+      faces,
+      detectionImageSize,
+      mirrorHorizontally: mirrorHorizontally,
+    );
 
-    if (inputImage != null) {
-      _processImage(inputImage);
-    }
+    _isBusy = false;
+    if (mounted) setState(() {});
   }
 
   /// Returns true if the face center falls inside (or close to) the oval region.
-  /// The oval is fixed at 280×370 logical px, centered with a -40px vertical offset.
-  bool _isFaceInOval(Face face, Size imageSize, InputImageRotation rotation) {
+  /// [detectionImageSize] must match [mp.detectionSize] (upright, downscaled space).
+  bool _isFaceInOval(
+    DetectedFace face,
+    Size detectionImageSize, {
+    required bool mirrorHorizontally,
+  }) {
     final screenSize = _screenSize;
     if (screenSize == null) return true; // fallback before first build
 
@@ -393,96 +414,70 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     const double ovalH = 370;
     const double verticalOffset = -40;
 
-    // Normalize face bounding-box center to [0,1] in screen (portrait) space.
     final fc = face.boundingBox.center;
-    double normX, normY;
-    switch (rotation) {
-      case InputImageRotation.rotation90deg:
-        normX = fc.dy / imageSize.height;
-        normY = 1.0 - fc.dx / imageSize.width;
-        break;
-      case InputImageRotation.rotation270deg:
-        normX = 1.0 - fc.dy / imageSize.height;
-        normY = fc.dx / imageSize.width;
-        break;
-      case InputImageRotation.rotation180deg:
-        normX = 1.0 - fc.dx / imageSize.width;
-        normY = 1.0 - fc.dy / imageSize.height;
-        break;
-      default: // rotation0deg
-        normX = fc.dx / imageSize.width;
-        normY = fc.dy / imageSize.height;
+    double normX = fc.dx / detectionImageSize.width;
+    double normY = fc.dy / detectionImageSize.height;
+    if (mirrorHorizontally) {
+      normX = 1.0 - normX;
     }
 
-    // Oval center and semi-axes in normalised screen coordinates.
     final ovalCx = 0.5;
     final ovalCy = (screenSize.height / 2 + verticalOffset) / screenSize.height;
     final ovalA = (ovalW / 2) / screenSize.width;
     final ovalB = (ovalH / 2) / screenSize.height;
 
-    // Allow a small tolerance band beyond the oval edge.
     const double tolerance = 1.3;
     final dx = (normX - ovalCx) / (ovalA * tolerance);
     final dy = (normY - ovalCy) / (ovalB * tolerance);
     return dx * dx + dy * dy <= 1.0;
   }
 
-  Future<void> _processImage(InputImage inputImage) async {
-    if (_isBusy) return;
-    if (_isTakingPicture) return;
-    _isBusy = true;
+  Future<void> _processDetectedFaces(
+    List<DetectedFace> faces,
+    Size detectionImageSize, {
+    required bool mirrorHorizontally,
+  }) async {
+    final faceInOval = faces.isNotEmpty &&
+        _isFaceInOval(
+          faces.first,
+          detectionImageSize,
+          mirrorHorizontally: mirrorHorizontally,
+        );
 
-    final faces = await MachineLearningKitHelper.instance.processInputImage(
-      inputImage,
-    );
+    if (faces.isEmpty || !faceInOval) {
+      _delayedStableConsecutiveFrames = 0;
+      _cancelDelayedFaceCapture();
+      _resetSteps();
+      if (mounted) setState(() => _faceDetectedState = false);
+    } else {
+      if (mounted) setState(() => _faceDetectedState = true);
 
-    if (inputImage.metadata?.size != null &&
-        inputImage.metadata?.rotation != null) {
-      final imageSize = inputImage.metadata!.size;
-      final rotation = inputImage.metadata!.rotation;
-      final faceInOval = faces.isNotEmpty &&
-          _isFaceInOval(faces.first, imageSize, rotation);
-
-      if (faces.isEmpty || !faceInOval) {
-        _delayedStableConsecutiveFrames = 0;
-        _cancelDelayedFaceCapture();
-        _resetSteps();
-        if (mounted) setState(() => _faceDetectedState = false);
-      } else {
-        if (mounted) setState(() => _faceDetectedState = true);
-
-        if (widget.config.enableDelayedFaceCapture) {
-          if (_delayedFaceCaptureTimer?.isActive ?? false) {
-            // Countdown already running; keep holding position.
-          } else {
-            _delayedStableConsecutiveFrames++;
-            final need = widget.config.delayedFaceCaptureStableFrames;
-            if (_delayedStableConsecutiveFrames >= need) {
-              _delayedStableConsecutiveFrames = 0;
-              _startDelayedFaceCountdown();
-            }
-          }
+      if (widget.config.enableDelayedFaceCapture) {
+        if (_delayedFaceCaptureTimer?.isActive ?? false) {
+          // Countdown already running; keep holding position.
         } else {
-          final currentIndex = _stepsKey.currentState?.currentIndex ?? 0;
-          List<LivenessDetectionStepItem> currentSteps = _getStepsToUse();
-          if (currentIndex < currentSteps.length) {
-            _detectFace(
-              face: faces.first,
-              step: currentSteps[currentIndex].step,
-            );
+          _delayedStableConsecutiveFrames++;
+          final need = widget.config.delayedFaceCaptureStableFrames;
+          if (_delayedStableConsecutiveFrames >= need) {
+            _delayedStableConsecutiveFrames = 0;
+            _startDelayedFaceCountdown();
           }
         }
+      } else {
+        final currentIndex = _stepsKey.currentState?.currentIndex ?? 0;
+        final currentSteps = _getStepsToUse();
+        if (currentIndex < currentSteps.length) {
+          _detectFace(
+            face: faces.first,
+            step: currentSteps[currentIndex].step,
+          );
+        }
       }
-    } else {
-      _resetSteps();
     }
-
-    _isBusy = false;
-    if (mounted) setState(() {});
   }
 
   void _detectFace({
-    required Face face,
+    required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     if (_isProcessingStep) return;
@@ -688,7 +683,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   Future<void> _handlingBlinkStep({
-    required Face face,
+    required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     final blinkThreshold =
@@ -696,17 +691,19 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
                 .firstWhereOrNull((p0) => p0 is LivenessThresholdBlink)
             as LivenessThresholdBlink?;
 
-    if ((face.leftEyeOpenProbability ?? 1.0) <
-            (blinkThreshold?.leftEyeProbability ?? 0.25) &&
-        (face.rightEyeOpenProbability ?? 1.0) <
-            (blinkThreshold?.rightEyeProbability ?? 0.25)) {
+    final leftEye = face.leftEyeOpenProbability;
+    final rightEye = face.rightEyeOpenProbability;
+    if (leftEye == null || rightEye == null) return;
+
+    if (leftEye < (blinkThreshold?.leftEyeProbability ?? 0.25) &&
+        rightEye < (blinkThreshold?.rightEyeProbability ?? 0.25)) {
       _startProcessing();
       await _completeStep(step: step);
     }
   }
 
   Future<void> _handlingTurnRight({
-    required Face face,
+    required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     if (Platform.isAndroid) {
@@ -733,7 +730,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   Future<void> _handlingTurnLeft({
-    required Face face,
+    required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     if (Platform.isAndroid) {
@@ -760,7 +757,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   Future<void> _handlingLookUp({
-    required Face face,
+    required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     final headTurnThreshold =
@@ -775,7 +772,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   Future<void> _handlingLookDown({
-    required Face face,
+    required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     final headTurnThreshold =
@@ -790,7 +787,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   Future<void> _handlingSmile({
-    required Face face,
+    required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     final smileThreshold =
@@ -798,8 +795,10 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
                 .firstWhereOrNull((p0) => p0 is LivenessThresholdSmile)
             as LivenessThresholdSmile?;
 
-    if ((face.smilingProbability ?? 0) >
-        (smileThreshold?.probability ?? 0.65)) {
+    final smile = face.smilingProbability;
+    if (smile == null) return;
+
+    if (smile > (smileThreshold?.probability ?? 0.65)) {
       _startProcessing();
       await _completeStep(step: step);
     }
