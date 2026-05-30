@@ -47,14 +47,28 @@ class LivenessDetectionConfig {
   /// Consecutive in-oval face frames required before the wait starts.
   final int delayedFaceCaptureStableFrames;
 
-  /// Bottom instruction while holding position (countdown is appended when active).
+  /// Consecutive out-of-oval (or no-face) frames before resetting countdown/UI.
+  /// Ignores single-frame bounding-box jitter from the detector.
+  final int faceOutOfOvalDebounceFrames;
+
+  /// Bottom instruction while holding position before capture.
   final String delayedFaceCaptureInstruction;
+
+  /// When true with [enableDelayedFaceCapture], shows a large animated countdown
+  /// over the oval. When false, countdown text stays on the instruction card.
+  final bool showAnimatedCaptureCountdown;
 
   /// Max dimension for MediaPipe face detection (lower = faster).
   final int faceDetectionMaxDim;
 
   /// MediaPipe mode: [fast] = bbox only; [standard] = bbox + mesh for blink/smile.
   final bool faceDetectionFastMode;
+
+  /// When true, emits [LivenessFaceDetection] logs for debugging on device.
+  final bool enableFaceDetectionLogging;
+
+  /// Log a detection summary every N processed frames (state changes always log).
+  final int faceDetectionLogIntervalFrames;
 
   LivenessDetectionConfig({
     this.startWithInfoScreen = false,
@@ -80,9 +94,13 @@ class LivenessDetectionConfig {
     this.enableDelayedFaceCapture = false,
     this.delayedFaceCaptureAfterSeconds = 3,
     this.delayedFaceCaptureStableFrames = 2,
+    this.faceOutOfOvalDebounceFrames = 3,
     this.delayedFaceCaptureInstruction = 'Keep your head in the frame',
+    this.showAnimatedCaptureCountdown = false,
     this.faceDetectionMaxDim = 480,
     this.faceDetectionFastMode = false,
+    this.enableFaceDetectionLogging = true,
+    this.faceDetectionLogIntervalFrames = 30,
   }) : assert(
          !useCustomizedLabel || customizedLabel != null,
          'customizedLabel must not be null when useCustomizedLabel is true',
@@ -93,5 +111,13 @@ class LivenessDetectionConfig {
          !enableDelayedFaceCapture || delayedFaceCaptureStableFrames >= 1,
          'delayedFaceCaptureStableFrames must be >= 1 when enableDelayedFaceCapture is true',
        ),
-       assert(faceDetectionMaxDim >= 128, 'faceDetectionMaxDim must be >= 128');
+       assert(
+         faceOutOfOvalDebounceFrames >= 1,
+         'faceOutOfOvalDebounceFrames must be >= 1',
+       ),
+       assert(faceDetectionMaxDim >= 128, 'faceDetectionMaxDim must be >= 128'),
+       assert(
+         faceDetectionLogIntervalFrames >= 1,
+         'faceDetectionLogIntervalFrames must be >= 1',
+       );
 }

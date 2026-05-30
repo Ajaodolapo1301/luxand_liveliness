@@ -20,6 +20,16 @@ class LuxandLiveness {
   /// [enableDelayedFaceCapture] – when `true`, skips challenges: once the face
   /// is stable in the oval, waits [delayedFaceCaptureAfterSeconds] then takes
   /// one photo (timer resets if the face leaves the oval).
+  ///
+  /// [faceDetectionFastMode] – when `true` (default), uses MediaPipe fast mode
+  /// (bounding box only). Set to `false` if you run blink/smile challenges.
+  ///
+  /// [faceOutOfOvalDebounceFrames] – consecutive bad frames before the capture
+  /// countdown resets (default 3). Reduces jitter from noisy bounding boxes.
+  ///
+  /// [showAnimatedCaptureCountdown] – with [enableDelayedFaceCapture], shows a
+  /// large animated 3-2-1 over the oval (default `true`). Set `false` for the
+  /// legacy small countdown text on the instruction card.
   static Future<LuxandLivenessResult?> verify({
     required BuildContext context,
     required String apiKey,
@@ -32,6 +42,9 @@ class LuxandLiveness {
     int delayedFaceCaptureAfterSeconds = 3,
     int delayedFaceCaptureStableFrames = 2,
     String delayedFaceCaptureInstruction = 'Keep your head in the frame',
+    bool faceDetectionFastMode = true,
+    int faceOutOfOvalDebounceFrames = 3,
+    bool showAnimatedCaptureCountdown = true,
   }) async {
     final effectiveTheme =
         theme ??
@@ -54,6 +67,7 @@ class LuxandLiveness {
             .livenessDetection(
               context: context,
               config: LivenessDetectionConfig(
+                enableCooldownOnFailure: false,
                 cameraResolution: ResolutionPreset.high,
                 imageQuality: 90,
                 isEnableMaxBrightness: true,
@@ -79,6 +93,9 @@ class LuxandLiveness {
                 delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
                 delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
                 delayedFaceCaptureInstruction: delayedFaceCaptureInstruction,
+                faceDetectionFastMode: faceDetectionFastMode,
+                faceOutOfOvalDebounceFrames: faceOutOfOvalDebounceFrames,
+                showAnimatedCaptureCountdown: showAnimatedCaptureCountdown,
               ),
             );
 

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/index.dart';
+import 'package:flutter_liveness_detection_randomized_plugin/src/core/constants/liveness_oval_constants.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/presentation/widgets/circular_progress_widget/circular_progress_painter.dart';
 
 class LivenessDetectionStepOverlayWidget extends StatefulWidget {
@@ -23,6 +24,9 @@ class LivenessDetectionStepOverlayWidget extends StatefulWidget {
   /// Shown when [steps] is empty (e.g. delayed face-only capture).
   final String emptyStepsInstruction;
 
+  /// When set, shows a large animated countdown centered on the oval.
+  final int? captureCountdownSeconds;
+
   const LivenessDetectionStepOverlayWidget({
     super.key,
     required this.steps,
@@ -41,6 +45,7 @@ class LivenessDetectionStepOverlayWidget extends StatefulWidget {
     this.manualSnapLabel = 'Snap',
     this.manualSnapRequireFaceDetected = true,
     this.emptyStepsInstruction = '',
+    this.captureCountdownSeconds,
   });
 
   @override
@@ -64,10 +69,10 @@ class LivenessDetectionStepOverlayWidgetState
   Timer? _manualSnapTimer;
   int _elapsedSecondsOnDetection = 0;
 
-  // Oval dimensions
-  static const double _ovalW = 280;
-  static const double _ovalH = 370;
-  static const double _verticalOffset = -40.0;
+  // Oval dimensions (shared with face-in-oval hit testing in LivenessDetectionView)
+  static const double _ovalW = LivenessOvalConstants.width;
+  static const double _ovalH = LivenessOvalConstants.height;
+  static const double _verticalOffset = LivenessOvalConstants.verticalOffset;
 
   // Theme helpers
   Color get _overlayColor => const Color(0xCC000000);
@@ -262,6 +267,21 @@ class LivenessDetectionStepOverlayWidgetState
           ),
         ),
 
+        // Large capture countdown (delayed face capture)
+        if (widget.captureCountdownSeconds != null)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: screenSize.height / 2 + _verticalOffset - 20,
+            child: IgnorePointer(
+              child: _AnimatedCaptureCountdown(
+                seconds: widget.captureCountdownSeconds!,
+                accentColor: _ringProgressColor,
+                labelColor: _instructionTextColor,
+              ),
+            ),
+          ),
+
         // Face status label just below the oval
         Positioned(
           left: 0,
@@ -385,6 +405,65 @@ class LivenessDetectionStepOverlayWidgetState
                 color: _isLoading ? _instructionTextColor : Colors.transparent,
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Prominent animated seconds countdown shown over the oval during capture delay.
+class _AnimatedCaptureCountdown extends StatelessWidget {
+  const _AnimatedCaptureCountdown({
+    required this.seconds,
+    required this.accentColor,
+    required this.labelColor,
+  });
+
+  final int seconds;
+  final Color accentColor;
+  final Color labelColor;
+
+  static const _shadows = [
+    Shadow(blurRadius: 10, color: Colors.black87),
+    Shadow(blurRadius: 20, color: Colors.black54),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Photo in',
+          style: TextStyle(
+            color: labelColor,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            shadows: _shadows,
+          ),
+        ),
+        const SizedBox(height: 8),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) {
+            return ScaleTransition(
+              scale: animation,
+              child: FadeTransition(opacity: animation, child: child),
+            );
+          },
+          child: Text(
+            '$seconds',
+            key: ValueKey<int>(seconds),
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 96,
+              height: 1,
+              fontWeight: FontWeight.w800,
+              shadows: _shadows,
+            ),
           ),
         ),
       ],

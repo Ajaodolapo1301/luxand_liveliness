@@ -2,6 +2,8 @@
 import 'package:flutter_liveness_detection_randomized_plugin/index.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/core/constants/liveness_detection_step_constant.dart';
 import 'package:face_detection_tflite/face_detection_tflite.dart' as mp;
+import 'package:flutter_liveness_detection_randomized_plugin/src/core/constants/liveness_oval_constants.dart';
+import 'package:flutter_liveness_detection_randomized_plugin/src/core/utils/liveness_face_detection_logger.dart';
 import 'package:collection/collection.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:image/image.dart' as img;
@@ -28,6 +30,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   int _cameraIndex = 0;
   bool _isBusy = false;
   bool _isTakingPicture = false;
+  late final LivenessFaceDetectionLogger _faceLogger;
   Timer? _timerToDetectFace;
 
   // Detection state variables
@@ -38,6 +41,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   List<LivenessDetectionStepItem> _shuffledSteps = [];
 
   int _delayedStableConsecutiveFrames = 0;
+  int _outOfOvalConsecutiveFrames = 0;
   Timer? _delayedFaceCaptureTimer;
   int? _delayedFaceCaptureSecondsRemaining;
 
@@ -201,6 +205,9 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
   @override
   void initState() {
+    _faceLogger = LivenessFaceDetectionLogger(
+      enabled: widget.config.enableFaceDetectionLogging,
+    );
     _preInitCallBack();
     super.initState();
     if (widget.config.enableCooldownOnFailure) {
@@ -269,6 +276,15 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
   void _startLiveFeed() async {
     final camera = availableCams[_cameraIndex];
+    MediaPipeFaceDetectorHelper.instance.logEnabled =
+        widget.config.enableFaceDetectionLogging;
+    _faceLogger.info(
+      'Starting camera stream | lens=${camera.lensDirection.name} '
+      'sensorOrientation=${camera.sensorOrientation} '
+      'resolution=${widget.config.cameraResolution.name} '
+      'maxDim=${widget.config.faceDetectionMaxDim} '
+      'mode=${widget.config.faceDetectionFastMode ? "fast" : "standard"}',
+    );
     _cameraController = CameraController(
       camera,
       widget.config.cameraResolution,
@@ -280,8 +296,14 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
     _cameraController?.initialize().then((_) async {
       if (!mounted) return;
-      await MediaPipeFaceDetectorHelper.instance.ensureInitialized();
+      try {
+        await MediaPipeFaceDetectorHelper.instance.ensureInitialized();
+      } catch (e) {
+        _faceLogger.error('FaceDetector init failed — detection will not run', e);
+        return;
+      }
       if (!mounted) return;
+      _faceLogger.info('Camera initialized — image stream starting');
       _cameraController?.startImageStream(_processCameraImage);
       setState(() {});
     });
@@ -336,8 +358,9 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   String _delayedFaceEmptyInstruction() {
-    final r = _delayedFaceCaptureSecondsRemaining;
     final base = widget.config.delayedFaceCaptureInstruction;
+    if (widget.config.showAnimatedCaptureCountdown) return base;
+    final r = _delayedFaceCaptureSecondsRemaining;
     if (r == null) return base;
     return '$base\nPhoto in ${r}s';
   }
@@ -358,46 +381,48 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     if (_isTakingPicture) return;
     _isBusy = true;
 
-    final camera = availableCams[_cameraIndex];
-    final mode = widget.config.faceDetectionFastMode
-        ? mp.FaceDetectionMode.fast
-        : mp.FaceDetectionMode.standard;
-    final maxDim = widget.config.faceDetectionMaxDim;
-    final deviceOrientation = _effectiveDeviceOrientation();
-    final isFrontCamera =
-        camera.lensDirection == CameraLensDirection.front;
-    final rotation = mp.rotationForFrame(
-      width: cameraImage.width,
-      height: cameraImage.height,
-      sensorOrientation: camera.sensorOrientation,
-      isFrontCamera: isFrontCamera,
-      deviceOrientation: deviceOrientation,
-    );
-    final detectionImageSize = mp.detectionSize(
-      width: cameraImage.width,
-      height: cameraImage.height,
-      rotation: rotation,
-      maxDim: maxDim,
-    );
-    final mirrorHorizontally = Platform.isAndroid && isFrontCamera;
+    try {
+      final camera = availableCams[_cameraIndex];
+      final mode = widget.config.faceDetectionFastMode
+          ? mp.FaceDetectionMode.fast
+          : mp.FaceDetectionMode.standard;
+      final maxDim = widget.config.faceDetectionMaxDim;
+      final deviceOrientation = _effectiveDeviceOrientation();
+      final isFrontCamera =
+          camera.lensDirection == CameraLensDirection.front;
+      final rotation = mp.rotationForFrame(
+        width: cameraImage.width,
+        height: cameraImage.height,
+        sensorOrientation: camera.sensorOrientation,
+        isFrontCamera: isFrontCamera,
+        deviceOrientation: deviceOrientation,
+      );
+      final detectionImageSize = mp.detectionSize(
+        width: cameraImage.width,
+        height: cameraImage.height,
+        rotation: rotation,
+        maxDim: maxDim,
+      );
+      final mirrorHorizontally = Platform.isAndroid && isFrontCamera;
 
-    final faces = await MediaPipeFaceDetectorHelper.instance.processCameraImage(
-      cameraImage,
-      camera: camera,
-      deviceOrientation: deviceOrientation,
-      rotation: rotation,
-      mode: mode,
-      maxDim: maxDim,
-    );
+      final faces = await MediaPipeFaceDetectorHelper.instance.processCameraImage(
+        cameraImage,
+        camera: camera,
+        deviceOrientation: deviceOrientation,
+        rotation: rotation,
+        mode: mode,
+        maxDim: maxDim,
+      );
 
-    await _processDetectedFaces(
-      faces,
-      detectionImageSize,
-      mirrorHorizontally: mirrorHorizontally,
-    );
-
-    _isBusy = false;
-    if (mounted) setState(() {});
+      await _processDetectedFaces(
+        faces,
+        detectionImageSize,
+        mirrorHorizontally: mirrorHorizontally,
+      );
+    } finally {
+      _isBusy = false;
+      if (mounted) setState(() {});
+    }
   }
 
   /// Returns true if the face center falls inside (or close to) the oval region.
@@ -410,9 +435,9 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     final screenSize = _screenSize;
     if (screenSize == null) return true; // fallback before first build
 
-    const double ovalW = 280;
-    const double ovalH = 370;
-    const double verticalOffset = -40;
+    const double ovalW = LivenessOvalConstants.width;
+    const double ovalH = LivenessOvalConstants.height;
+    const double verticalOffset = LivenessOvalConstants.verticalOffset;
 
     final fc = face.boundingBox.center;
     double normX = fc.dx / detectionImageSize.width;
@@ -421,12 +446,12 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
       normX = 1.0 - normX;
     }
 
-    final ovalCx = 0.5;
+    const ovalCx = 0.5;
     final ovalCy = (screenSize.height / 2 + verticalOffset) / screenSize.height;
     final ovalA = (ovalW / 2) / screenSize.width;
     final ovalB = (ovalH / 2) / screenSize.height;
 
-    const double tolerance = 1.3;
+    const double tolerance = LivenessOvalConstants.inOvalTolerance;
     final dx = (normX - ovalCx) / (ovalA * tolerance);
     final dy = (normY - ovalCy) / (ovalB * tolerance);
     return dx * dx + dy * dy <= 1.0;
@@ -437,20 +462,55 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     Size detectionImageSize, {
     required bool mirrorHorizontally,
   }) async {
-    final faceInOval = faces.isNotEmpty &&
+    final rawInOval = faces.isNotEmpty &&
         _isFaceInOval(
           faces.first,
           detectionImageSize,
           mirrorHorizontally: mirrorHorizontally,
         );
 
-    if (faces.isEmpty || !faceInOval) {
+    if (rawInOval) {
+      _outOfOvalConsecutiveFrames = 0;
+    } else {
+      _outOfOvalConsecutiveFrames++;
+    }
+
+    final debounceLimit = widget.config.faceOutOfOvalDebounceFrames;
+    final faceInOval = rawInOval ||
+        (_faceDetectedState && _outOfOvalConsecutiveFrames < debounceLimit);
+
+    final face = faces.isNotEmpty ? faces.first : null;
+    _faceLogger.logDetectionFrame(
+      faceCount: faces.length,
+      faceInOval: faceInOval,
+      intervalFrames: widget.config.faceDetectionLogIntervalFrames,
+      bbox: face == null
+          ? null
+          : 'bbox=${face.boundingBox.left.toStringAsFixed(0)},'
+              '${face.boundingBox.top.toStringAsFixed(0)},'
+              '${face.boundingBox.width.toStringAsFixed(0)}x'
+              '${face.boundingBox.height.toStringAsFixed(0)}',
+      metrics: face == null
+          ? null
+          : 'leftEye=${_fmtProb(face.leftEyeOpenProbability)} '
+              'rightEye=${_fmtProb(face.rightEyeOpenProbability)} '
+              'smile=${_fmtProb(face.smilingProbability)}',
+      extras: 'detSize=${detectionImageSize.width.toStringAsFixed(0)}x'
+          '${detectionImageSize.height.toStringAsFixed(0)} '
+          'mirror=$mirrorHorizontally '
+          'rawInOval=$rawInOval outStreak=$_outOfOvalConsecutiveFrames',
+    );
+
+    if (!faceInOval) {
       _delayedStableConsecutiveFrames = 0;
       _cancelDelayedFaceCapture();
       _resetSteps();
       if (mounted) setState(() => _faceDetectedState = false);
     } else {
       if (mounted) setState(() => _faceDetectedState = true);
+
+      // Grace period: keep UI/countdown, but don't advance until raw in-oval again.
+      if (!rawInOval) return;
 
       if (widget.config.enableDelayedFaceCapture) {
         if (_delayedFaceCaptureTimer?.isActive ?? false) {
@@ -476,13 +536,16 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     }
   }
 
+  String _fmtProb(double? value) =>
+      value == null ? 'n/a' : value.toStringAsFixed(2);
+
   void _detectFace({
     required DetectedFace face,
     required LivenessDetectionStep step,
   }) async {
     if (_isProcessingStep) return;
 
-    debugPrint('Current Step: $step');
+    _faceLogger.info('Challenge step=$step');
 
     switch (step) {
       case LivenessDetectionStep.blink:
@@ -544,6 +607,11 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   void _onDetectionCompleted({String? imgPath}) async {
+    _faceLogger.info(
+      imgPath == null
+          ? 'Liveness timed out (limit ${widget.config.durationLivenessVerify ?? 45}s)'
+          : 'Liveness capture success | path=$imgPath',
+    );
     if (widget.config.isEnableSnackBar) {
       final snackBar = SnackBar(
         content: Text(
@@ -677,6 +745,11 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
           emptyStepsInstruction: widget.config.enableDelayedFaceCapture
               ? _delayedFaceEmptyInstruction()
               : '',
+          captureCountdownSeconds:
+              widget.config.enableDelayedFaceCapture &&
+                  widget.config.showAnimatedCaptureCountdown
+              ? _delayedFaceCaptureSecondsRemaining
+              : null,
         ),
       ],
     );
@@ -693,10 +766,25 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
     final leftEye = face.leftEyeOpenProbability;
     final rightEye = face.rightEyeOpenProbability;
-    if (leftEye == null || rightEye == null) return;
+    if (leftEye == null || rightEye == null) {
+      _faceLogger.info(
+        'Blink waiting for mesh | leftEye=$leftEye rightEye=$rightEye',
+      );
+      return;
+    }
+
+    _faceLogger.logDetectionFrame(
+      faceCount: 1,
+      faceInOval: true,
+      intervalFrames: widget.config.faceDetectionLogIntervalFrames,
+      metrics: 'blink leftEye=${leftEye.toStringAsFixed(2)} '
+          'rightEye=${rightEye.toStringAsFixed(2)} '
+          'threshold=${blinkThreshold?.leftEyeProbability ?? 0.25}',
+    );
 
     if (leftEye < (blinkThreshold?.leftEyeProbability ?? 0.25) &&
         rightEye < (blinkThreshold?.rightEyeProbability ?? 0.25)) {
+      _faceLogger.info('Blink passed');
       _startProcessing();
       await _completeStep(step: step);
     }
@@ -796,9 +884,21 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
             as LivenessThresholdSmile?;
 
     final smile = face.smilingProbability;
-    if (smile == null) return;
+    if (smile == null) {
+      _faceLogger.info('Smile waiting for mesh | smile=$smile');
+      return;
+    }
+
+    _faceLogger.logDetectionFrame(
+      faceCount: 1,
+      faceInOval: true,
+      intervalFrames: widget.config.faceDetectionLogIntervalFrames,
+      metrics: 'smile=${smile.toStringAsFixed(2)} '
+          'threshold=${smileThreshold?.probability ?? 0.65}',
+    );
 
     if (smile > (smileThreshold?.probability ?? 0.65)) {
+      _faceLogger.info('Smile passed');
       _startProcessing();
       await _completeStep(step: step);
     }

@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:face_detection_tflite/face_detection_tflite.dart' as mp;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_liveness_detection_randomized_plugin/src/core/utils/liveness_face_detection_logger.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/models/detected_face.dart';
 
 /// MediaPipe BlazeFace via [face_detection_tflite] — replaces ML Kit for detection.
@@ -14,6 +14,8 @@ class MediaPipeFaceDetectorHelper {
 
   mp.FaceDetector? _detector;
   Future<void>? _initFuture;
+  bool logEnabled = false;
+  final LivenessFaceDetectionLogger _logger = LivenessFaceDetectionLogger();
 
   Future<void> ensureInitialized() {
     _initFuture ??= _initialize();
@@ -21,9 +23,17 @@ class MediaPipeFaceDetectorHelper {
   }
 
   Future<void> _initialize() async {
-    final detector = mp.FaceDetector();
-    await detector.initialize(model: mp.FaceDetectionModel.frontCamera);
-    _detector = detector;
+    _logger.enabled = logEnabled;
+    try {
+      final detector = mp.FaceDetector();
+      await detector.initialize(model: mp.FaceDetectionModel.frontCamera);
+      _detector = detector;
+      _logger.info('FaceDetector ready (model=frontCamera)');
+    } catch (e, st) {
+      _logger.error('FaceDetector init failed', e);
+      _logger.error('stack', st);
+      rethrow;
+    }
   }
 
   Future<void> dispose() async {
@@ -64,8 +74,9 @@ class MediaPipeFaceDetectorHelper {
 
       if (faces.isEmpty) return [];
       return faces.map(_mapFace).toList();
-    } catch (e) {
-      debugPrint('MediaPipe face detection error: $e');
+    } catch (e, st) {
+      _logger.error('detectFacesFromCameraImage failed', e);
+      _logger.error('stack', st);
       return [];
     }
   }
