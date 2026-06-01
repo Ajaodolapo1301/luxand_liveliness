@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/index.dart';
+
+import 'debug/liveness_capture_exporter.dart';
 import 'models/luxand_liveness_result.dart';
 import 'services/luxand_api.dart';
 
@@ -21,8 +24,8 @@ class LuxandLiveness {
   /// is stable in the oval, waits [delayedFaceCaptureAfterSeconds] then takes
   /// one photo (timer resets if the face leaves the oval).
   ///
-  /// [faceDetectionFastMode] – when `true` (default), uses MediaPipe fast mode
-  /// (bounding box only). Set to `false` if you run blink/smile challenges.
+  /// [faceDetectionFastMode] – when `true`, uses MediaPipe fast mode (bbox only).
+  /// Ignored while [requireEyesTowardCamera] is `true` (mesh is required).
   ///
   /// [faceOutOfOvalDebounceFrames] – consecutive bad frames before the capture
   /// countdown resets (default 3). Reduces jitter from noisy bounding boxes.
@@ -30,6 +33,19 @@ class LuxandLiveness {
   /// [showAnimatedCaptureCountdown] – with [enableDelayedFaceCapture], shows a
   /// large animated 3-2-1 over the oval (default `true`). Set `false` for the
   /// legacy small countdown text on the instruction card.
+  ///
+  /// [requireEyesTowardCamera] – when `true` with delayed capture, requires eyes
+  /// toward the lens (not down at the screen) before countdown and shutter.
+  ///
+  /// [enableMaxBrightness] – forces app brightness to 100% during capture.
+  /// Default `false` to reduce screen glare in the eyes on bright AMOLED phones.
+  ///
+  /// [capturePostProcessDelayMs] – wait after [takePicture] before processing.
+  /// Defaults to 200 ms on Android, 0 on iOS.
+  ///
+  /// [debugExportCaptures] – copies raw + Luxand upload JPEGs to Downloads/
+  /// `luxand_liveness_debug` (visible in Samsung My Files). Defaults to `true`
+  /// in debug builds only.
   static Future<LuxandLivenessResult?> verify({
     required BuildContext context,
     required String apiKey,
@@ -41,25 +57,41 @@ class LuxandLiveness {
     bool enableDelayedFaceCapture = false,
     int delayedFaceCaptureAfterSeconds = 3,
     int delayedFaceCaptureStableFrames = 2,
-    String delayedFaceCaptureInstruction = 'Keep your head in the frame',
+    String? delayedFaceCaptureInstruction,
     bool faceDetectionFastMode = true,
     int faceOutOfOvalDebounceFrames = 3,
     bool showAnimatedCaptureCountdown = true,
+    bool requireEyesTowardCamera = true,
+    bool enableMaxBrightness = false,
+    int? capturePostProcessDelayMs,
+    bool? debugExportCaptures,
   }) async {
-    final effectiveTheme =
-        theme ??
-        const LivenessDetectionTheme(
-          backgroundColor: Color(0xFF0A0A0A),
+    final exportCaptures = debugExportCaptures ?? kDebugMode;
+
+    final instruction = delayedFaceCaptureInstruction ??
+        'Keep your head in the oval.\n'
+            'Look at the camera at the top of your phone, not the screen.';
+
+    final effectiveTheme = theme ??
+        LivenessDetectionTheme(
+          backgroundColor: const Color(0xFF0A0A0A),
           ringProgressColor: Colors.deepPurple,
-          ringTrackColor: Color(0xFF2A2A2A),
-          instructionCardColor: Color(0xFF1A1A2E),
+          ringTrackColor: const Color(0xFF2A2A2A),
+          instructionCardColor: const Color(0xFF1A1A2E),
           instructionTextColor: Colors.white,
           instructionFontSize: 14,
           statusTextColor: Colors.white70,
-          faceFoundLabel: 'Face detected — follow the instructions',
-          faceNotFoundLabel: 'Position your face in the frame',
+          faceFoundLabel: enableDelayedFaceCapture
+              ? 'Face in frame — look at the camera at the top'
+              : 'Face detected — follow the instructions',
+          faceNotFoundLabel: enableDelayedFaceCapture
+              ? 'Position your face in the oval'
+              : 'Position your face in the frame',
           backLabel: 'Cancel',
         );
+
+    final postDelay = capturePostProcessDelayMs ??
+        (Platform.isAndroid ? 200 : 0);
 
     // Step 1: Run liveness challenges
     final String? capturedImagePath =
@@ -70,7 +102,7 @@ class LuxandLiveness {
                 enableCooldownOnFailure: false,
                 cameraResolution: ResolutionPreset.high,
                 imageQuality: 90,
-                isEnableMaxBrightness: true,
+                isEnableMaxBrightness: enableMaxBrightness,
                 durationLivenessVerify: 45,
                 shuffleListWithSmileLast: false,
                 useCustomizedLabel: true,
@@ -92,10 +124,15 @@ class LuxandLiveness {
                 enableDelayedFaceCapture: enableDelayedFaceCapture,
                 delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
                 delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
-                delayedFaceCaptureInstruction: delayedFaceCaptureInstruction,
+                delayedFaceCaptureInstruction: instruction,
+                lookAtCameraInstruction:
+                    'Look at the camera at the top of your phone, not the screen',
                 faceDetectionFastMode: faceDetectionFastMode,
                 faceOutOfOvalDebounceFrames: faceOutOfOvalDebounceFrames,
                 showAnimatedCaptureCountdown: showAnimatedCaptureCountdown,
+                requireEyesTowardCamera:
+                    enableDelayedFaceCapture && requireEyesTowardCamera,
+                capturePostProcessDelayMs: postDelay,
               ),
             );
 
@@ -109,12 +146,19 @@ class LuxandLiveness {
       final api = LuxandApi(apiKey: apiKey);
       final response = await api.checkLiveness(imageFile);
 
+      if (exportCaptures) {
+        await LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
+      }
+
       return LuxandLivenessResult.success(
         isReal: response.isReal,
         score: response.score,
         imageFile: imageFile,
       );
     } catch (e) {
+      if (exportCaptures) {
+        await LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
+      }
       return LuxandLivenessResult.failure(e.toString());
     }
   }

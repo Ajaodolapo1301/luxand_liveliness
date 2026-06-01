@@ -353,8 +353,12 @@ class LivenessDetectionStepOverlayWidgetState
                         absorbing: true,
                         child: SizedBox(
                           height: 80,
-                          child: widget.steps.isEmpty
+                          child: widget.steps.isEmpty ||
+                                  widget.emptyStepsInstruction.isNotEmpty
                               ? Container(
+                                  constraints: const BoxConstraints(
+                                    minHeight: 80,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: _instructionCardColor,
                                     borderRadius: BorderRadius.circular(16),

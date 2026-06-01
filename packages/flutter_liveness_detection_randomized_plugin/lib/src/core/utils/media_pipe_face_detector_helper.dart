@@ -95,10 +95,13 @@ class MediaPipeFaceDetectorHelper {
     double? rightEye;
     double? smile;
 
+    bool? gazeTowardCamera;
     if (mesh != null && mesh.length >= 468) {
-      leftEye = _eyeOpenFromEar(_ear(mesh.points, _leftEarIndices));
-      rightEye = _eyeOpenFromEar(_ear(mesh.points, _rightEarIndices));
-      smile = _smileProbability(mesh.points, rect.width);
+      final points = mesh.points;
+      leftEye = _eyeOpenFromEar(_ear(points, _leftEarIndices));
+      rightEye = _eyeOpenFromEar(_ear(points, _rightEarIndices));
+      smile = _smileProbability(points, rect.width);
+      gazeTowardCamera = _gazeTowardCamera(points);
     }
 
     return DetectedFace(
@@ -106,7 +109,44 @@ class MediaPipeFaceDetectorHelper {
       leftEyeOpenProbability: leftEye,
       rightEyeOpenProbability: rightEye,
       smilingProbability: smile,
+      gazeTowardCamera: gazeTowardCamera,
     );
+  }
+
+  /// Proxy: eyes looking down at the phone screen raise vertical ratio in the eye socket.
+  static bool? _gazeTowardCamera(List<mp.Point> mesh) {
+    final left = _eyeVerticalOpenRatio(
+      mesh,
+      top: 159,
+      bottom: 145,
+      outer: 33,
+      inner: 133,
+    );
+    final right = _eyeVerticalOpenRatio(
+      mesh,
+      top: 386,
+      bottom: 374,
+      outer: 263,
+      inner: 362,
+    );
+    if (left == null || right == null) return null;
+    const maxDownwardRatio = 0.58;
+    return left < maxDownwardRatio && right < maxDownwardRatio;
+  }
+
+  static double? _eyeVerticalOpenRatio(
+    List<mp.Point> mesh, {
+    required int top,
+    required int bottom,
+    required int outer,
+    required int inner,
+  }) {
+    final topY = mesh[top].y;
+    final bottomY = mesh[bottom].y;
+    final span = bottomY - topY;
+    if (span.abs() < 1e-3) return null;
+    final centerY = (mesh[outer].y + mesh[inner].y) / 2;
+    return (centerY - topY) / span;
   }
 
   static const _leftEarIndices = [33, 160, 158, 133, 153, 144];

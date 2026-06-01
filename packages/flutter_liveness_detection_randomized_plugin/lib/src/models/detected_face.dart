@@ -9,6 +9,9 @@ class DetectedFace {
   final double? headEulerAngleX;
   final double? headEulerAngleY;
 
+  /// When mesh is available: `true` if eyes are not aimed down at the screen.
+  final bool? gazeTowardCamera;
+
   const DetectedFace({
     required this.boundingBox,
     this.leftEyeOpenProbability,
@@ -16,5 +19,6 @@ class DetectedFace {
     this.smilingProbability,
     this.headEulerAngleX,
     this.headEulerAngleY,
+    this.gazeTowardCamera,
   });
 }

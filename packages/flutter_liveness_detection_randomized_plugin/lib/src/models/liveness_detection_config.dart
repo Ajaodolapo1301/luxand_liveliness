@@ -58,6 +58,16 @@ class LivenessDetectionConfig {
   /// over the oval. When false, countdown text stays on the instruction card.
   final bool showAnimatedCaptureCountdown;
 
+  /// When true (with mesh / standard detection), countdown only starts when eyes
+  /// are not aimed down at the screen preview.
+  final bool requireEyesTowardCamera;
+
+  /// Shown when the face is in the oval but [requireEyesTowardCamera] fails.
+  final String lookAtCameraInstruction;
+
+  /// Wait after [takePicture] before reading the file (helps some Android devices).
+  final int capturePostProcessDelayMs;
+
   /// Max dimension for MediaPipe face detection (lower = faster).
   final int faceDetectionMaxDim;
 
@@ -95,8 +105,13 @@ class LivenessDetectionConfig {
     this.delayedFaceCaptureAfterSeconds = 3,
     this.delayedFaceCaptureStableFrames = 2,
     this.faceOutOfOvalDebounceFrames = 3,
-    this.delayedFaceCaptureInstruction = 'Keep your head in the frame',
+    this.delayedFaceCaptureInstruction =
+        'Keep your head in the oval.\nLook at the camera at the top of your phone, not the screen.',
     this.showAnimatedCaptureCountdown = false,
+    this.requireEyesTowardCamera = false,
+    this.lookAtCameraInstruction =
+        'Look at the camera at the top of your phone, not the screen',
+    this.capturePostProcessDelayMs = 0,
     this.faceDetectionMaxDim = 480,
     this.faceDetectionFastMode = false,
     this.enableFaceDetectionLogging = true,
@@ -119,5 +134,9 @@ class LivenessDetectionConfig {
        assert(
          faceDetectionLogIntervalFrames >= 1,
          'faceDetectionLogIntervalFrames must be >= 1',
+       ),
+       assert(
+         capturePostProcessDelayMs >= 0,
+         'capturePostProcessDelayMs must be >= 0',
        );
 }

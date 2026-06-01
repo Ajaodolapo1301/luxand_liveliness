@@ -30,6 +30,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   int _cameraIndex = 0;
   bool _isBusy = false;
   bool _isTakingPicture = false;
+  bool _cameraReleased = false;
   late final LivenessFaceDetectionLogger _faceLogger;
   Timer? _timerToDetectFace;
 
@@ -42,6 +43,9 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
   int _delayedStableConsecutiveFrames = 0;
   int _outOfOvalConsecutiveFrames = 0;
+  int _outOfGazeConsecutiveFrames = 0;
+  bool _gazeTowardCameraState = false;
+  bool _showLookAtCameraHint = false;
   Timer? _delayedFaceCaptureTimer;
   int? _delayedFaceCaptureSecondsRemaining;
 
@@ -220,13 +224,36 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _postFrameCallBack());
   }
 
+  /// Stops the stream and closes Camera2 before the route is popped, so
+  /// onClosed callbacks are less likely to hit a dead Handler thread.
+  Future<void> _releaseCamera() async {
+    if (_cameraReleased) return;
+    _cameraReleased = true;
+    final controller = _cameraController;
+    _cameraController = null;
+    if (controller == null) return;
+    try {
+      if (controller.value.isInitialized &&
+          controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } catch (_) {}
+    try {
+      await controller.dispose();
+    } catch (_) {}
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+  }
+
   @override
   void dispose() {
     _timerToDetectFace?.cancel();
     _timerToDetectFace = null;
     _delayedFaceCaptureTimer?.cancel();
     _delayedFaceCaptureTimer = null;
-    _cameraController?.dispose();
+    if (!_cameraReleased) {
+      _cameraController?.dispose();
+      _cameraController = null;
+    }
     MediaPipeFaceDetectorHelper.instance.dispose();
 
     if (widget.config.isEnableMaxBrightness) {
@@ -331,7 +358,9 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     final secs = widget.config.delayedFaceCaptureAfterSeconds;
     if (secs <= 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _faceDetectedState) _takePicture();
+        if (mounted && _faceDetectedState && _gazeTowardCameraState) {
+          _takePicture();
+        }
       });
       return;
     }
@@ -348,7 +377,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
         t.cancel();
         _delayedFaceCaptureTimer = null;
         setState(() => _delayedFaceCaptureSecondsRemaining = null);
-        if (_faceDetectedState) {
+        if (_faceDetectedState && _gazeTowardCameraState) {
           _takePicture();
         }
       } else {
@@ -358,6 +387,9 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   String _delayedFaceEmptyInstruction() {
+    if (_showLookAtCameraHint) {
+      return widget.config.lookAtCameraInstruction;
+    }
     final base = widget.config.delayedFaceCaptureInstruction;
     if (widget.config.showAnimatedCaptureCountdown) return base;
     final r = _delayedFaceCaptureSecondsRemaining;
@@ -383,7 +415,9 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
     try {
       final camera = availableCams[_cameraIndex];
-      final mode = widget.config.faceDetectionFastMode
+      final useFastMode = widget.config.faceDetectionFastMode &&
+          !widget.config.requireEyesTowardCamera;
+      final mode = useFastMode
           ? mp.FaceDetectionMode.fast
           : mp.FaceDetectionMode.standard;
       final maxDim = widget.config.faceDetectionMaxDim;
@@ -480,6 +514,20 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
         (_faceDetectedState && _outOfOvalConsecutiveFrames < debounceLimit);
 
     final face = faces.isNotEmpty ? faces.first : null;
+
+    final requireGaze = widget.config.requireEyesTowardCamera;
+    final rawGazeOk = !requireGaze ||
+        (face != null && face.gazeTowardCamera == true);
+    if (rawGazeOk) {
+      _outOfGazeConsecutiveFrames = 0;
+    } else if (requireGaze) {
+      _outOfGazeConsecutiveFrames++;
+    }
+    final gazeOk = rawGazeOk ||
+        (_gazeTowardCameraState &&
+            _outOfGazeConsecutiveFrames < debounceLimit);
+    _gazeTowardCameraState = gazeOk;
+    final readyToCapture = faceInOval && gazeOk;
     _faceLogger.logDetectionFrame(
       faceCount: faces.length,
       faceInOval: faceInOval,
@@ -498,19 +546,43 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
       extras: 'detSize=${detectionImageSize.width.toStringAsFixed(0)}x'
           '${detectionImageSize.height.toStringAsFixed(0)} '
           'mirror=$mirrorHorizontally '
-          'rawInOval=$rawInOval outStreak=$_outOfOvalConsecutiveFrames',
+          'rawInOval=$rawInOval outStreak=$_outOfOvalConsecutiveFrames '
+          'gazeOk=$gazeOk rawGaze=$rawGazeOk '
+          'gaze=${face?.gazeTowardCamera}',
     );
+
+    final lookAtCameraHint =
+        requireGaze && faceInOval && !rawGazeOk && face != null;
 
     if (!faceInOval) {
       _delayedStableConsecutiveFrames = 0;
       _cancelDelayedFaceCapture();
       _resetSteps();
-      if (mounted) setState(() => _faceDetectedState = false);
+      if (mounted) {
+        setState(() {
+          _faceDetectedState = false;
+          _showLookAtCameraHint = false;
+        });
+      }
+    } else if (!readyToCapture) {
+      _delayedStableConsecutiveFrames = 0;
+      _cancelDelayedFaceCapture();
+      if (mounted) {
+        setState(() {
+          _faceDetectedState = true;
+          _showLookAtCameraHint = lookAtCameraHint;
+        });
+      }
     } else {
-      if (mounted) setState(() => _faceDetectedState = true);
+      if (mounted) {
+        setState(() {
+          _faceDetectedState = true;
+          _showLookAtCameraHint = false;
+        });
+      }
 
-      // Grace period: keep UI/countdown, but don't advance until raw in-oval again.
-      if (!rawInOval) return;
+      // Grace period: keep UI/countdown, but don't advance until raw in-oval + gaze OK.
+      if (!rawInOval || (requireGaze && !rawGazeOk)) return;
 
       if (widget.config.enableDelayedFaceCapture) {
         if (_delayedFaceCaptureTimer?.isActive ?? false) {
@@ -596,6 +668,11 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
         return;
       }
 
+      final flushMs = widget.config.capturePostProcessDelayMs;
+      if (flushMs > 0) {
+        await Future<void>.delayed(Duration(milliseconds: flushMs));
+      }
+
       final XFile? finalImage = await _compressImage(clickedImage);
 
       if (mounted) setState(() => _isTakingPicture = false);
@@ -623,6 +700,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(snackBar);
     }
+    await _releaseCamera();
     if (!mounted) return;
     Navigator.of(context).pop(imgPath);
   }
