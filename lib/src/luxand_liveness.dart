@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/index.dart';
+import 'package:path_provider/path_provider.dart';
 
-import 'debug/liveness_capture_exporter.dart';
 import 'models/luxand_liveness_result.dart';
 import 'services/luxand_api.dart';
 
@@ -147,7 +147,7 @@ class LuxandLiveness {
       final response = await api.checkLiveness(imageFile);
 
       if (exportCaptures) {
-        await LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
+        await _LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
       }
 
       return LuxandLivenessResult.success(
@@ -157,9 +157,49 @@ class LuxandLiveness {
       );
     } catch (e) {
       if (exportCaptures) {
-        await LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
+        await _LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
       }
       return LuxandLivenessResult.failure(e.toString());
+    }
+  }
+}
+
+/// Copies liveness captures to Downloads/luxand_liveness_debug (debug QA only).
+abstract final class _LivenessCaptureExporter {
+  static const String _folderName = 'luxand_liveness_debug';
+
+  static Future<String?> export({required String rawCapturePath}) async {
+    try {
+      final downloads = await getDownloadsDirectory();
+      if (downloads == null) return null;
+
+      final outDir = Directory('${downloads.path}/$_folderName');
+      if (!outDir.existsSync()) {
+        outDir.createSync(recursive: true);
+      }
+
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final rawOut = '${outDir.path}/capture_$stamp.jpg';
+      await File(rawCapturePath).copy(rawOut);
+
+      String? fixedOut;
+      final fixed = '${rawCapturePath}_fixed.jpg';
+      if (File(fixed).existsSync()) {
+        fixedOut = '${outDir.path}/capture_${stamp}_luxand_upload.jpg';
+        await File(fixed).copy(fixedOut);
+      }
+
+      // ignore: avoid_print
+      print(
+        '[LuxandDebug] Captures exported to ${outDir.path}\n'
+        '  raw: $rawOut\n'
+        '  upload: ${fixedOut ?? "(no _fixed file)"}',
+      );
+      return outDir.path;
+    } catch (e) {
+      // ignore: avoid_print
+      print('[LuxandDebug] Export failed: $e');
+      return null;
     }
   }
 }
