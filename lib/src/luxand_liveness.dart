@@ -93,48 +93,62 @@ class LuxandLiveness {
     final postDelay = capturePostProcessDelayMs ??
         (Platform.isAndroid ? 200 : 0);
 
-    // Step 1: Run liveness challenges
-    final String? capturedImagePath =
-        await FlutterLivenessDetectionRandomizedPlugin.instance
-            .livenessDetection(
-              context: context,
-              config: LivenessDetectionConfig(
-                enableCooldownOnFailure: false,
-                cameraResolution: ResolutionPreset.high,
-                imageQuality: 90,
-                isEnableMaxBrightness: enableMaxBrightness,
-                durationLivenessVerify: 45,
-                shuffleListWithSmileLast: false,
-                useCustomizedLabel: true,
-                customizedLabel: LivenessDetectionLabelModel(
-                  blink: 'Blink 2-3 times',
-                  smile: 'Smile',
-                  lookLeft: '',
-                  lookRight: '',
-                  lookUp: '',
-                  lookDown: '',
-                ),
-                showDurationUiText: true,
-                showCurrentStep: true,
-                theme: effectiveTheme,
-                enableManualSnapFallback: enableManualSnapFallback,
-                manualSnapAfterSeconds: manualSnapAfterSeconds,
-                manualSnapLabel: manualSnapLabel,
-                manualSnapRequireFaceDetected: manualSnapRequireFaceDetected,
-                enableDelayedFaceCapture: enableDelayedFaceCapture,
-                delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
-                delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
-                delayedFaceCaptureInstruction: instruction,
-                lookAtCameraInstruction:
-                    'Look at the camera at the top of your phone, not the screen',
-                faceDetectionFastMode: faceDetectionFastMode,
-                faceOutOfOvalDebounceFrames: faceOutOfOvalDebounceFrames,
-                showAnimatedCaptureCountdown: showAnimatedCaptureCountdown,
-                requireEyesTowardCamera:
-                    enableDelayedFaceCapture && requireEyesTowardCamera,
-                capturePostProcessDelayMs: postDelay,
-              ),
-            );
+    final config = LivenessDetectionConfig(
+      enableCooldownOnFailure: false,
+      cameraResolution: ResolutionPreset.high,
+      imageQuality: 90,
+      isEnableMaxBrightness: enableMaxBrightness,
+      durationLivenessVerify: 45,
+      shuffleListWithSmileLast: false,
+      useCustomizedLabel: true,
+      customizedLabel: LivenessDetectionLabelModel(
+        blink: 'Blink 2-3 times',
+        smile: 'Smile',
+        lookLeft: '',
+        lookRight: '',
+        lookUp: '',
+        lookDown: '',
+      ),
+      showDurationUiText: true,
+      showCurrentStep: true,
+      theme: effectiveTheme,
+      enableManualSnapFallback: enableManualSnapFallback,
+      manualSnapAfterSeconds: manualSnapAfterSeconds,
+      manualSnapLabel: manualSnapLabel,
+      manualSnapRequireFaceDetected: manualSnapRequireFaceDetected,
+      enableDelayedFaceCapture: enableDelayedFaceCapture,
+      delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
+      delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
+      delayedFaceCaptureInstruction: instruction,
+      lookAtCameraInstruction:
+          'Look at the camera at the top of your phone, not the screen',
+      faceDetectionFastMode: faceDetectionFastMode,
+      faceOutOfOvalDebounceFrames: faceOutOfOvalDebounceFrames,
+      showAnimatedCaptureCountdown: showAnimatedCaptureCountdown,
+      requireEyesTowardCamera:
+          enableDelayedFaceCapture && requireEyesTowardCamera,
+      capturePostProcessDelayMs: postDelay,
+    );
+
+    if (!context.mounted) return null;
+
+    // Step 1: capture the face image.
+    // Android (delayed-capture mode) uses the native camera + MediaPipe
+    // pipeline; everything else uses the existing Dart flow until native iOS
+    // and native challenge mode land.
+    final bool useNative = Platform.isAndroid && enableDelayedFaceCapture;
+    final String? capturedImagePath;
+    if (useNative) {
+      capturedImagePath = await Navigator.of(context).push<String>(
+        MaterialPageRoute<String>(
+          builder: (_) => NativeLivenessView(config: config),
+        ),
+      );
+    } else {
+      capturedImagePath = await FlutterLivenessDetectionRandomizedPlugin
+          .instance
+          .livenessDetection(context: context, config: config);
+    }
 
     // User cancelled
     if (capturedImagePath == null) return null;

@@ -351,34 +351,36 @@ class LivenessDetectionStepOverlayWidgetState
                       )
                     : AbsorbPointer(
                         absorbing: true,
-                        child: SizedBox(
-                          height: 80,
-                          child: widget.steps.isEmpty ||
-                                  widget.emptyStepsInstruction.isNotEmpty
-                              ? Container(
-                                  constraints: const BoxConstraints(
-                                    minHeight: 80,
+                        child: widget.steps.isEmpty ||
+                                widget.emptyStepsInstruction.isNotEmpty
+                            ? Container(
+                                // Grows with the text (min 80) so multi-line
+                                // instructions aren't clipped on small screens.
+                                constraints: const BoxConstraints(
+                                  minHeight: 80,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _instructionCardColor,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                                child: Text(
+                                  widget.emptyStepsInstruction,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _instructionTextColor,
+                                    fontSize: _instructionFontSize,
+                                    fontWeight: FontWeight.w600,
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: _instructionCardColor,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  alignment: Alignment.center,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 12,
-                                  ),
-                                  child: Text(
-                                    widget.emptyStepsInstruction,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: _instructionTextColor,
-                                      fontSize: _instructionFontSize,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                )
-                              : PageView.builder(
+                                ),
+                              )
+                            : SizedBox(
+                                height: 80,
+                                child: PageView.builder(
                                   controller: _pageController,
                                   itemCount: widget.steps.length,
                                   itemBuilder: (_, index) => Container(
@@ -402,7 +404,7 @@ class LivenessDetectionStepOverlayWidgetState
                                     ),
                                   ),
                                 ),
-                        ),
+                              ),
                       ),
               const SizedBox(height: 12),
               CupertinoActivityIndicator(

@@ -88,7 +88,7 @@ class LivenessDetectionConfig {
     this.customizedLabel,
     this.isEnableMaxBrightness = true,
     this.imageQuality = 100,
-    this.cameraResolution = ResolutionPreset.high,
+    this.cameraResolution = ResolutionPreset.medium,
     this.enableCooldownOnFailure = false,
     this.maxFailedAttempts = 3,
     this.cooldownMinutes = 10,
@@ -112,9 +112,9 @@ class LivenessDetectionConfig {
     this.lookAtCameraInstruction =
         'Look at the camera at the top of your phone, not the screen',
     this.capturePostProcessDelayMs = 0,
-    this.faceDetectionMaxDim = 480,
-    this.faceDetectionFastMode = false,
-    this.enableFaceDetectionLogging = true,
+    this.faceDetectionMaxDim = 320,
+    this.faceDetectionFastMode = true,
+    this.enableFaceDetectionLogging = false,
     this.faceDetectionLogIntervalFrames = 30,
   }) : assert(
          !useCustomizedLabel || customizedLabel != null,

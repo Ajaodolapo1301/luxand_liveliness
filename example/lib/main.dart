@@ -1,6 +1,8 @@
 import 'package:flutter_liveness_detection_randomized_plugin/index.dart';
 import 'package:luxand_liveness/luxand_liveness.dart';
 
+import 'native_preview_test_page.dart';
+
 /// Pass at run time: `--dart-define=LUXAND_API_KEY=your_token`
 const _apiKeyFromDefine = String.fromEnvironment('LUXAND_API_KEY');
 
@@ -191,6 +193,15 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
                 FilledButton.tonal(
                   onPressed: _runFullVerify,
                   child: const Text('Full verify (plugin + Luxand Cloud)'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const NativePreviewTestPage(),
+                    ),
+                  ),
+                  child: const Text('Native preview test (no detection)'),
                 ),
                 if (_lastMessage != null) ...[
                   const SizedBox(height: 24),

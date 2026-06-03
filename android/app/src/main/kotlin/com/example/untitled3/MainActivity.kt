@@ -1,15 +1,8 @@
 package com.example.untitled3
 
 import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            LuxandSdkManager.CHANNEL,
-        ).setMethodCallHandler(LuxandSdkManager(this))
-    }
-}
+// Native capture (camera preview, MediaPipe detection, JPEG capture) lives in the
+// flutter_liveness_detection_randomized_plugin package and is registered by the
+// plugin itself. The example app does not register any native channels.
+class MainActivity : FlutterActivity()
