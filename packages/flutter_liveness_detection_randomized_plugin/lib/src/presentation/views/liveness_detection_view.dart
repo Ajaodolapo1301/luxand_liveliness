@@ -255,6 +255,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
       _cameraController = null;
     }
     MediaPipeFaceDetectorHelper.instance.dispose();
+    MlKitFaceDetectorHelper.instance.dispose();
 
     if (widget.config.isEnableMaxBrightness) {
       resetApplicationBrightness();
@@ -301,10 +302,19 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     // Steps are shuffled fresh in _preInitCallBack
   }
 
+  /// iOS uses Google ML Kit (the tflite path mis-decodes iOS frames); Android
+  /// keeps the MediaPipe [face_detection_tflite] Dart path.
+  bool get _useMlKit => Platform.isIOS;
+
   void _startLiveFeed() async {
     final camera = availableCams[_cameraIndex];
-    MediaPipeFaceDetectorHelper.instance.logEnabled =
-        widget.config.enableFaceDetectionLogging;
+    if (_useMlKit) {
+      MlKitFaceDetectorHelper.instance.logEnabled =
+          widget.config.enableFaceDetectionLogging;
+    } else {
+      MediaPipeFaceDetectorHelper.instance.logEnabled =
+          widget.config.enableFaceDetectionLogging;
+    }
     _faceLogger.info(
       'Starting camera stream | lens=${camera.lensDirection.name} '
       'sensorOrientation=${camera.sensorOrientation} '
@@ -316,6 +326,10 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
       camera,
       widget.config.cameraResolution,
       enableAudio: false,
+      // iOS delivers VIDEO-range NV12 for yuv420, which the detector decodes
+      // with a full-range formula → washed-out image → zero faces. BGRA has no
+      // luma-range ambiguity, so iOS uses bgra8888 (with isBgra:true in the
+      // helper). Android's full-range yuv420 decodes correctly.
       imageFormatGroup: Platform.isAndroid
           ? ImageFormatGroup.yuv420
           : ImageFormatGroup.bgra8888,
@@ -324,7 +338,11 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     _cameraController?.initialize().then((_) async {
       if (!mounted) return;
       try {
-        await MediaPipeFaceDetectorHelper.instance.ensureInitialized();
+        if (_useMlKit) {
+          await MlKitFaceDetectorHelper.instance.ensureInitialized();
+        } else {
+          await MediaPipeFaceDetectorHelper.instance.ensureInitialized();
+        }
       } catch (e) {
         _faceLogger.error('FaceDetector init failed — detection will not run', e);
         return;
@@ -415,6 +433,27 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
 
     try {
       final camera = availableCams[_cameraIndex];
+
+      if (_useMlKit) {
+        // iOS: ML Kit returns boxes in upright portrait pixel space (the buffer
+        // is pre-rotated by AVFoundation and ML Kit ignores rotation on iOS),
+        // and the front camera is already mirrored — so no rotation/mirror map.
+        final faces = await MlKitFaceDetectorHelper.instance.processCameraImage(
+          cameraImage,
+          camera: camera,
+        );
+        final detectionImageSize = Size(
+          cameraImage.width.toDouble(),
+          cameraImage.height.toDouble(),
+        );
+        await _processDetectedFaces(
+          faces,
+          detectionImageSize,
+          mirrorHorizontally: false,
+        );
+        return;
+      }
+
       final useFastMode = widget.config.faceDetectionFastMode &&
           !widget.config.requireEyesTowardCamera;
       final mode = useFastMode

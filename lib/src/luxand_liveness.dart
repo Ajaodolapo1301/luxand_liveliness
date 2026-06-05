@@ -95,6 +95,7 @@ class LuxandLiveness {
 
     final config = LivenessDetectionConfig(
       enableCooldownOnFailure: false,
+      enableFaceDetectionLogging: true,
       cameraResolution: ResolutionPreset.high,
       imageQuality: 90,
       isEnableMaxBrightness: enableMaxBrightness,

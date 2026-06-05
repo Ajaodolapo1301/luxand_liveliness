@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
   plugin_platform_interface: ^2.0.2
   face_detection_tflite: ^6.2.9
+  google_mlkit_face_detection: ^0.13.0
   camera: 0.10.6
   equatable: ^2.0.5
   image: ^4.0.15

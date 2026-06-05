@@ -15,6 +15,7 @@ class MediaPipeFaceDetectorHelper {
   mp.FaceDetector? _detector;
   Future<void>? _initFuture;
   bool logEnabled = false;
+  int _diagFrame = 0;
   final LivenessFaceDetectionLogger _logger = LivenessFaceDetectionLogger();
 
   Future<void> ensureInitialized() {
@@ -70,7 +71,28 @@ class MediaPipeFaceDetectorHelper {
         mode: mode,
         rotation: effectiveRotation,
         maxDim: maxDim,
+        // iOS feeds single-plane bgra8888. The package only auto-sets
+        // isBgra=true on macOS, so without this it decodes iOS frames as RGBA
+        // and swaps R/B → BlazeFace sees blue skin and detects nothing.
+        // Ignored for Android's multi-plane YUV.
+        isBgra: true,
       );
+
+      // Throttled diagnostics: confirms frames arrive, their shape, the
+      // rotation applied, and how many faces came back. Filter logs by
+      // `LivenessFaceDetection`.
+      _diagFrame++;
+      if (logEnabled && _diagFrame % 15 == 1) {
+        _logger.info(
+          'detect | ${image.width}x${image.height} '
+          'planes=${image.planes.length} '
+          'bpr=${image.planes.isNotEmpty ? image.planes.first.bytesPerRow : -1} '
+          'sensor=${camera.sensorOrientation} '
+          'lens=${camera.lensDirection.name} '
+          'rot=${effectiveRotation?.name ?? "none"} '
+          'faces=${faces.length}',
+        );
+      }
 
       if (faces.isEmpty) return [];
       return faces.map(_mapFace).toList();
