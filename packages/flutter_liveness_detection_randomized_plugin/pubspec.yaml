@@ -24,7 +24,7 @@ dependencies:
   shared_preferences: ^2.2.2
 
 dependency_overrides:
-  camera_android_camerax: 0.6.10+1
+  camera_android_camerax: 0.6.10+2
 
 dev_dependencies:
   flutter_test:
