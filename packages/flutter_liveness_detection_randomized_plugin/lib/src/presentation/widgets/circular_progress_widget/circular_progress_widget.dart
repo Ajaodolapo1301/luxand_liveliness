@@ -2,11 +2,19 @@ import 'package:flutter/material.dart';
 
 // Stub — CircularProgressWidget is no longer used in the SmileID-style UI.
 class _NoPainter extends CustomPainter {
-  const _NoPainter({dynamic currentStep, dynamic selectedColor,
-      dynamic unselectedColor, dynamic gradientColor,
-      dynamic maxStep, dynamic widthLine, dynamic heightLine});
-  @override void paint(Canvas c, Size s) {}
-  @override bool shouldRepaint(covariant CustomPainter o) => false;
+  const _NoPainter({
+    dynamic currentStep,
+    dynamic selectedColor,
+    dynamic unselectedColor,
+    dynamic gradientColor,
+    dynamic maxStep,
+    dynamic widthLine,
+    dynamic heightLine,
+  });
+  @override
+  void paint(Canvas c, Size s) {}
+  @override
+  bool shouldRepaint(covariant CustomPainter o) => false;
 }
 
 class CircularProgressWidget extends StatefulWidget {
@@ -57,18 +65,16 @@ class _CircularProgressWidgetState extends State<CircularProgressWidget>
       vsync: this,
       duration: widget.duration,
     );
-    _animation = Tween(begin: 0.0, end: widget.current).animate(
-      CurvedAnimation(
-        parent: _animationController!,
-        curve: widget.curve,
-      ),
-    )..addListener(() {
-        if (mounted) {
-          setState(() {
-            _current = _animation!.value;
-          });
-        }
-      });
+    _animation =
+        Tween(begin: 0.0, end: widget.current).animate(
+          CurvedAnimation(parent: _animationController!, curve: widget.curve),
+        )..addListener(() {
+          if (mounted) {
+            setState(() {
+              _current = _animation!.value;
+            });
+          }
+        });
 
     _animationController!.forward();
   }
@@ -84,15 +90,13 @@ class _CircularProgressWidgetState extends State<CircularProgressWidget>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.current != widget.current) {
       if (_animationController != null) {
-        _animation = Tween(
-          begin: oldWidget.current,
-          end: widget.current,
-        ).animate(
-          CurvedAnimation(
-            parent: _animationController!,
-            curve: widget.curve,
-          ),
-        );
+        _animation = Tween(begin: oldWidget.current, end: widget.current)
+            .animate(
+              CurvedAnimation(
+                parent: _animationController!,
+                curve: widget.curve,
+              ),
+            );
         _animationController?.forward(from: 0.0);
       } else {
         _updateProgress();
@@ -131,7 +135,7 @@ class _CircularProgressWidgetState extends State<CircularProgressWidget>
                 child: Padding(
                   padding: EdgeInsets.all(widget.heightLine),
                   child: Container(
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       borderRadius: BorderRadius.all(
                         Radius.elliptical(1000, 1000),
                       ),

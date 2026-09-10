@@ -116,6 +116,12 @@ class FlutterLivenessDetectionRandomizedPlugin :
     }
 
     private fun startCamera(useFront: Boolean, maxDim: Int, result: Result) {
+        // Re-entry (retry after a failure, double-tap, a route transition where
+        // the previous view has not disposed yet) must not orphan the previous
+        // camera, analysis stream and MediaPipe detector.
+        cameraController?.dispose()
+        cameraController = null
+
         val controller = NativeCameraController(
             applicationContext,
             textureRegistry,

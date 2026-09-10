@@ -55,21 +55,6 @@ android {
         minSdk = 21
     }
 
-    dependencies {
-        // Native CameraX preview + capture (Texture-based).
-        def cameraxVersion = "1.4.2"
-        implementation "androidx.camera:camera-core:$cameraxVersion"
-        implementation "androidx.camera:camera-camera2:$cameraxVersion"
-        implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
-        implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.6.2"
-
-        // Native MediaPipe Tasks face detection (BlazeFace, bbox only).
-        implementation "com.google.mediapipe:tasks-vision:0.10.29"
-
-        testImplementation("org.jetbrains.kotlin:kotlin-test")
-        testImplementation("org.mockito:mockito-core:5.0.0")
-    }
-
     testOptions {
         unitTests.all {
             useJUnitPlatform()
@@ -81,6 +66,21 @@ android {
             }
         }
     }
+}
+
+dependencies {
+    // Native CameraX preview + capture (Texture-based).
+    def cameraxVersion = "1.4.2"
+    implementation "androidx.camera:camera-core:$cameraxVersion"
+    implementation "androidx.camera:camera-camera2:$cameraxVersion"
+    implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.6.2"
+
+    // Native MediaPipe Tasks face detection (BlazeFace, bbox only).
+    implementation "com.google.mediapipe:tasks-vision:0.10.29"
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("org.mockito:mockito-core:5.0.0")
 }
 
 // Add this block for subprojects

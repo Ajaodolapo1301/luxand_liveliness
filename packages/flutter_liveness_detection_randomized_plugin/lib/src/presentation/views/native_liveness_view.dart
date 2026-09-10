@@ -54,12 +54,16 @@ class _NativeLivenessViewState extends State<NativeLivenessView> {
         faceDetectionMaxDim: _config.faceDetectionMaxDim,
         fastMode: _config.faceDetectionFastMode,
       );
+      // dispose() may have run while that await was pending. Checking here
+      // rather than after the wiring below matters: dispose() cancels _sub and
+      // _timeoutTimer, so anything created past this point would never be
+      // cancelled and would keep driving a dead State.
+      if (!mounted) return;
       _sub = _controller.detections().listen(_onDetection);
       _timeoutTimer = Timer(
         Duration(seconds: _config.durationLivenessVerify ?? 45),
         () => _complete(null),
       );
-      if (!mounted) return;
       setState(() => _preview = preview);
     } catch (e) {
       if (!mounted) return;
@@ -103,6 +107,7 @@ class _NativeLivenessViewState extends State<NativeLivenessView> {
   }
 
   void _onDetection(NativeFaceDetection face) {
+    if (!mounted) return;
     if (_isTakingPicture) return;
 
     final rawInOval = face.hasFace && _isFaceInOval(face);
@@ -156,6 +161,7 @@ class _NativeLivenessViewState extends State<NativeLivenessView> {
 
   void _startDelayedFaceCountdown() {
     _delayedFaceCaptureTimer?.cancel();
+    if (!mounted) return;
     final secs = _config.delayedFaceCaptureAfterSeconds;
     if (secs <= 0) {
       if (_faceDetectedState) _takePicture();
@@ -189,7 +195,7 @@ class _NativeLivenessViewState extends State<NativeLivenessView> {
   }
 
   Future<void> _takePicture() async {
-    if (_isTakingPicture) return;
+    if (_isTakingPicture || !mounted) return;
     _cancelDelayedFaceCapture();
     setState(() => _isTakingPicture = true);
     try {
