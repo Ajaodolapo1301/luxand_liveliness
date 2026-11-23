@@ -190,7 +190,7 @@ class MyApp extends StatelessWidget {
 
 ## Platform Setup
 
-Face detection uses [`face_detection_tflite`](https://pub.dev/packages/face_detection_tflite) (MediaPipe models). **ML Kit is not used.**
+The Dart flow uses Google ML Kit face detection and is built for iOS. On Android, use the native capture view (MediaPipe), as `luxand_liveness` does.
 
 ### Android
 Add camera permission to your `android/app/src/main/AndroidManifest.xml`:

@@ -1,13 +1,11 @@
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter_liveness_detection_randomized_plugin/index.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/core/constants/liveness_detection_step_constant.dart';
-import 'package:face_detection_tflite/face_detection_tflite.dart' as mp;
 import 'package:flutter_liveness_detection_randomized_plugin/src/core/constants/liveness_oval_constants.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/core/utils/liveness_face_detection_logger.dart';
 import 'package:collection/collection.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:image/image.dart' as img;
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 List<CameraDescription> availableCams = [];
@@ -254,7 +252,6 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
       _cameraController?.dispose();
       _cameraController = null;
     }
-    MediaPipeFaceDetectorHelper.instance.dispose();
     MlKitFaceDetectorHelper.instance.dispose();
 
     if (widget.config.isEnableMaxBrightness) {
@@ -302,19 +299,10 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     // Steps are shuffled fresh in _preInitCallBack
   }
 
-  /// iOS uses Google ML Kit (the tflite path mis-decodes iOS frames); Android
-  /// keeps the MediaPipe [face_detection_tflite] Dart path.
-  bool get _useMlKit => Platform.isIOS;
-
   void _startLiveFeed() async {
     final camera = availableCams[_cameraIndex];
-    if (_useMlKit) {
-      MlKitFaceDetectorHelper.instance.logEnabled =
-          widget.config.enableFaceDetectionLogging;
-    } else {
-      MediaPipeFaceDetectorHelper.instance.logEnabled =
-          widget.config.enableFaceDetectionLogging;
-    }
+    MlKitFaceDetectorHelper.instance.logEnabled =
+        widget.config.enableFaceDetectionLogging;
     _faceLogger.info(
       'Starting camera stream | lens=${camera.lensDirection.name} '
       'sensorOrientation=${camera.sensorOrientation} '
@@ -338,11 +326,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     _cameraController?.initialize().then((_) async {
       if (!mounted) return;
       try {
-        if (_useMlKit) {
-          await MlKitFaceDetectorHelper.instance.ensureInitialized();
-        } else {
-          await MediaPipeFaceDetectorHelper.instance.ensureInitialized();
-        }
+        await MlKitFaceDetectorHelper.instance.ensureInitialized();
       } catch (e) {
         _faceLogger.error('FaceDetector init failed — detection will not run', e);
         return;
@@ -415,17 +399,6 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     return '$base\nPhoto in ${r}s';
   }
 
-  DeviceOrientation _effectiveDeviceOrientation() {
-    final controller = _cameraController;
-    if (controller != null && controller.value.isInitialized) {
-      return controller.value.deviceOrientation;
-    }
-    if (!mounted) return DeviceOrientation.portraitUp;
-    return MediaQuery.orientationOf(context) == Orientation.portrait
-        ? DeviceOrientation.portraitUp
-        : DeviceOrientation.landscapeLeft;
-  }
-
   Future<void> _processCameraImage(CameraImage cameraImage) async {
     if (_isBusy) return;
     if (_isTakingPicture) return;
@@ -434,63 +407,21 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
     try {
       final camera = availableCams[_cameraIndex];
 
-      if (_useMlKit) {
-        // iOS: ML Kit returns boxes in upright portrait pixel space (the buffer
-        // is pre-rotated by AVFoundation and ML Kit ignores rotation on iOS),
-        // and the front camera is already mirrored — so no rotation/mirror map.
-        final faces = await MlKitFaceDetectorHelper.instance.processCameraImage(
-          cameraImage,
-          camera: camera,
-        );
-        final detectionImageSize = Size(
-          cameraImage.width.toDouble(),
-          cameraImage.height.toDouble(),
-        );
-        await _processDetectedFaces(
-          faces,
-          detectionImageSize,
-          mirrorHorizontally: false,
-        );
-        return;
-      }
-
-      final useFastMode = widget.config.faceDetectionFastMode &&
-          !widget.config.requireEyesTowardCamera;
-      final mode = useFastMode
-          ? mp.FaceDetectionMode.fast
-          : mp.FaceDetectionMode.standard;
-      final maxDim = widget.config.faceDetectionMaxDim;
-      final deviceOrientation = _effectiveDeviceOrientation();
-      final isFrontCamera =
-          camera.lensDirection == CameraLensDirection.front;
-      final rotation = mp.rotationForFrame(
-        width: cameraImage.width,
-        height: cameraImage.height,
-        sensorOrientation: camera.sensorOrientation,
-        isFrontCamera: isFrontCamera,
-        deviceOrientation: deviceOrientation,
-      );
-      final detectionImageSize = mp.detectionSize(
-        width: cameraImage.width,
-        height: cameraImage.height,
-        rotation: rotation,
-        maxDim: maxDim,
-      );
-      final mirrorHorizontally = Platform.isAndroid && isFrontCamera;
-
-      final faces = await MediaPipeFaceDetectorHelper.instance.processCameraImage(
+      // iOS: ML Kit returns boxes in upright portrait pixel space (the buffer
+      // is pre-rotated by AVFoundation and ML Kit ignores rotation on iOS),
+      // and the front camera is already mirrored — so no rotation/mirror map.
+      final faces = await MlKitFaceDetectorHelper.instance.processCameraImage(
         cameraImage,
         camera: camera,
-        deviceOrientation: deviceOrientation,
-        rotation: rotation,
-        mode: mode,
-        maxDim: maxDim,
       );
-
+      final detectionImageSize = Size(
+        cameraImage.width.toDouble(),
+        cameraImage.height.toDouble(),
+      );
       await _processDetectedFaces(
         faces,
         detectionImageSize,
-        mirrorHorizontally: mirrorHorizontally,
+        mirrorHorizontally: false,
       );
     } finally {
       _isBusy = false;
@@ -499,7 +430,7 @@ class _LivenessDetectionScreenState extends State<LivenessDetectionView> {
   }
 
   /// Returns true if the face center falls inside (or close to) the oval region.
-  /// [detectionImageSize] must match [mp.detectionSize] (upright, downscaled space).
+  /// [detectionImageSize] is the upright frame size the detector reported in.
   bool _isFaceInOval(
     DetectedFace face,
     Size detectionImageSize, {

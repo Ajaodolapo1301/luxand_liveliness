@@ -1,3 +1,13 @@
+# Unreleased
+
+## BREAKING CHANGES
+- Removed `face_detection_tflite` (and with it `opencv_dart`/`dartcv4` and
+  `flutter_litert`), about 50 MB per ABI plus 29 MB of models.
+- The Dart capture flow now uses ML Kit only, which is written for iOS frames.
+  On Android, use the native capture (`NativeLivenessView`); `luxand_liveness`
+  now always does.
+- Removed `MediaPipeFaceDetectorHelper`.
+
 # 1.2.0 🚀
 
 ## BREAKING CHANGES

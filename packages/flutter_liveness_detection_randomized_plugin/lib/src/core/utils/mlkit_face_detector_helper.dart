@@ -4,12 +4,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/core/utils/liveness_face_detection_logger.dart';
 import 'package:flutter_liveness_detection_randomized_plugin/src/models/detected_face.dart';
 
-/// Google ML Kit face detection — used for the iOS Dart capture path.
-///
-/// Why iOS uses ML Kit instead of the MediaPipe ([face_detection_tflite]) path:
-/// the tflite package decodes iOS video-range NV12 with a full-range formula
-/// (washed-out → zero detections) and the FFI runtime has an open release-build
-/// symbol-stripping crash. ML Kit is Google's production-hardened detector.
+/// Google ML Kit face detection — the only detector in the Dart capture path,
+/// which is used on iOS. Android uses the native MediaPipe capture instead.
 ///
 /// Coordinate convention (correct-by-construction, no rotation math):
 /// - `camera_avfoundation` pre-rotates the stream to PORTRAIT via the capture

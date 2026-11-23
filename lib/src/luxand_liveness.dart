@@ -134,10 +134,10 @@ class LuxandLiveness {
     if (!context.mounted) return null;
 
     // Step 1: capture the face image.
-    // Android (delayed-capture mode) uses the native camera + MediaPipe
-    // pipeline; everything else uses the existing Dart flow until native iOS
-    // and native challenge mode land.
-    final bool useNative = Platform.isAndroid && enableDelayedFaceCapture;
+    // Android always uses the native camera + MediaPipe pipeline; iOS uses the
+    // Dart flow with ML Kit. The Dart flow no longer has an Android face
+    // detector (face_detection_tflite was removed to cut ~50 MB per ABI).
+    final bool useNative = Platform.isAndroid;
     final String? capturedImagePath;
     if (useNative) {
       capturedImagePath = await Navigator.of(context).push<String>(
