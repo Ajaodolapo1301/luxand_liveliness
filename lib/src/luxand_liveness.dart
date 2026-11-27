@@ -8,6 +8,116 @@ import 'services/luxand_api.dart';
 class LuxandLiveness {
   LuxandLiveness._();
 
+  /// Runs only the on-device capture (the same camera, oval and countdown as
+  /// [verify]) and returns the captured JPEG's path, or `null` if the user
+  /// cancelled. No Luxand Cloud call: use it when your own backend checks the
+  /// selfie. Takes the same options as [verify].
+  static Future<String?> capture({
+    required BuildContext context,
+    LivenessDetectionTheme? theme,
+    bool enableManualSnapFallback = false,
+    int manualSnapAfterSeconds = 10,
+    String manualSnapLabel = 'Snap',
+    bool manualSnapRequireFaceDetected = true,
+    bool enableDelayedFaceCapture = false,
+    int delayedFaceCaptureAfterSeconds = 3,
+    int delayedFaceCaptureStableFrames = 2,
+    String? delayedFaceCaptureInstruction,
+    bool faceDetectionFastMode = true,
+    int faceOutOfOvalDebounceFrames = 3,
+    bool showAnimatedCaptureCountdown = true,
+    bool requireEyesTowardCamera = true,
+    bool enableMaxBrightness = false,
+    int? capturePostProcessDelayMs,
+  }) async {
+    final instruction =
+        delayedFaceCaptureInstruction ??
+        'Keep your head in the oval.\n'
+            'Look at the camera at the top of your phone, not the screen.';
+
+    final effectiveTheme =
+        theme ??
+        LivenessDetectionTheme(
+          backgroundColor: const Color(0xFF0A0A0A),
+          ringProgressColor: Colors.deepPurple,
+          ringTrackColor: const Color(0xFF2A2A2A),
+          instructionCardColor: const Color(0xFF1A1A2E),
+          instructionTextColor: Colors.white,
+          instructionFontSize: 14,
+          statusTextColor: Colors.white70,
+          faceFoundLabel: enableDelayedFaceCapture
+              ? 'Face in frame — look at the camera at the top'
+              : 'Face detected — follow the instructions',
+          faceNotFoundLabel: enableDelayedFaceCapture
+              ? 'Position your face in the oval'
+              : 'Position your face in the frame',
+          backLabel: 'Cancel',
+        );
+
+    final postDelay =
+        capturePostProcessDelayMs ?? (Platform.isAndroid ? 200 : 0);
+
+    final config = LivenessDetectionConfig(
+      enableCooldownOnFailure: false,
+      enableFaceDetectionLogging: true,
+      cameraResolution: ResolutionPreset.high,
+      imageQuality: 90,
+      isEnableMaxBrightness: enableMaxBrightness,
+      durationLivenessVerify: 45,
+      shuffleListWithSmileLast: false,
+      useCustomizedLabel: true,
+      customizedLabel: LivenessDetectionLabelModel(
+        blink: 'Blink 2-3 times',
+        smile: 'Smile',
+        lookLeft: '',
+        lookRight: '',
+        lookUp: '',
+        lookDown: '',
+      ),
+      showDurationUiText: true,
+      showCurrentStep: true,
+      theme: effectiveTheme,
+      enableManualSnapFallback: enableManualSnapFallback,
+      manualSnapAfterSeconds: manualSnapAfterSeconds,
+      manualSnapLabel: manualSnapLabel,
+      manualSnapRequireFaceDetected: manualSnapRequireFaceDetected,
+      enableDelayedFaceCapture: enableDelayedFaceCapture,
+      delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
+      delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
+      delayedFaceCaptureInstruction: instruction,
+      lookAtCameraInstruction:
+          'Look at the camera at the top of your phone, not the screen',
+      faceDetectionFastMode: faceDetectionFastMode,
+      faceOutOfOvalDebounceFrames: faceOutOfOvalDebounceFrames,
+      showAnimatedCaptureCountdown: showAnimatedCaptureCountdown,
+      requireEyesTowardCamera:
+          enableDelayedFaceCapture && requireEyesTowardCamera,
+      capturePostProcessDelayMs: postDelay,
+    );
+
+    if (!context.mounted) return null;
+
+    // Step 1: capture the face image.
+    // Android always uses the native camera + MediaPipe pipeline; iOS uses the
+    // Dart flow with ML Kit. The Dart flow no longer has an Android face
+    // detector (face_detection_tflite was removed to cut ~50 MB per ABI).
+    final bool useNative = Platform.isAndroid;
+    final String? capturedImagePath;
+    if (useNative) {
+      capturedImagePath = await Navigator.of(context).push<String>(
+        MaterialPageRoute<String>(
+          builder: (_) => NativeLivenessView(config: config),
+        ),
+      );
+    } else {
+      capturedImagePath = await FlutterLivenessDetectionRandomizedPlugin
+          .instance
+          .livenessDetection(context: context, config: config);
+    }
+
+    return capturedImagePath;
+  }
+
   /// 1. Launches face challenge screen (blink + smile).
   /// 2. Sends the captured image to the Luxand Cloud API.
   /// 3. Returns a [LuxandLivenessResult], or `null` if the user cancelled.
@@ -68,51 +178,10 @@ class LuxandLiveness {
   }) async {
     final exportCaptures = debugExportCaptures ?? kDebugMode;
 
-    final instruction = delayedFaceCaptureInstruction ??
-        'Keep your head in the oval.\n'
-            'Look at the camera at the top of your phone, not the screen.';
-
-    final effectiveTheme = theme ??
-        LivenessDetectionTheme(
-          backgroundColor: const Color(0xFF0A0A0A),
-          ringProgressColor: Colors.deepPurple,
-          ringTrackColor: const Color(0xFF2A2A2A),
-          instructionCardColor: const Color(0xFF1A1A2E),
-          instructionTextColor: Colors.white,
-          instructionFontSize: 14,
-          statusTextColor: Colors.white70,
-          faceFoundLabel: enableDelayedFaceCapture
-              ? 'Face in frame — look at the camera at the top'
-              : 'Face detected — follow the instructions',
-          faceNotFoundLabel: enableDelayedFaceCapture
-              ? 'Position your face in the oval'
-              : 'Position your face in the frame',
-          backLabel: 'Cancel',
-        );
-
-    final postDelay = capturePostProcessDelayMs ??
-        (Platform.isAndroid ? 200 : 0);
-
-    final config = LivenessDetectionConfig(
-      enableCooldownOnFailure: false,
-      enableFaceDetectionLogging: true,
-      cameraResolution: ResolutionPreset.high,
-      imageQuality: 90,
-      isEnableMaxBrightness: enableMaxBrightness,
-      durationLivenessVerify: 45,
-      shuffleListWithSmileLast: false,
-      useCustomizedLabel: true,
-      customizedLabel: LivenessDetectionLabelModel(
-        blink: 'Blink 2-3 times',
-        smile: 'Smile',
-        lookLeft: '',
-        lookRight: '',
-        lookUp: '',
-        lookDown: '',
-      ),
-      showDurationUiText: true,
-      showCurrentStep: true,
-      theme: effectiveTheme,
+    // Step 1: capture the face image.
+    final capturedImagePath = await capture(
+      context: context,
+      theme: theme,
       enableManualSnapFallback: enableManualSnapFallback,
       manualSnapAfterSeconds: manualSnapAfterSeconds,
       manualSnapLabel: manualSnapLabel,
@@ -120,36 +189,14 @@ class LuxandLiveness {
       enableDelayedFaceCapture: enableDelayedFaceCapture,
       delayedFaceCaptureAfterSeconds: delayedFaceCaptureAfterSeconds,
       delayedFaceCaptureStableFrames: delayedFaceCaptureStableFrames,
-      delayedFaceCaptureInstruction: instruction,
-      lookAtCameraInstruction:
-          'Look at the camera at the top of your phone, not the screen',
+      delayedFaceCaptureInstruction: delayedFaceCaptureInstruction,
       faceDetectionFastMode: faceDetectionFastMode,
       faceOutOfOvalDebounceFrames: faceOutOfOvalDebounceFrames,
       showAnimatedCaptureCountdown: showAnimatedCaptureCountdown,
-      requireEyesTowardCamera:
-          enableDelayedFaceCapture && requireEyesTowardCamera,
-      capturePostProcessDelayMs: postDelay,
+      requireEyesTowardCamera: requireEyesTowardCamera,
+      enableMaxBrightness: enableMaxBrightness,
+      capturePostProcessDelayMs: capturePostProcessDelayMs,
     );
-
-    if (!context.mounted) return null;
-
-    // Step 1: capture the face image.
-    // Android always uses the native camera + MediaPipe pipeline; iOS uses the
-    // Dart flow with ML Kit. The Dart flow no longer has an Android face
-    // detector (face_detection_tflite was removed to cut ~50 MB per ABI).
-    final bool useNative = Platform.isAndroid;
-    final String? capturedImagePath;
-    if (useNative) {
-      capturedImagePath = await Navigator.of(context).push<String>(
-        MaterialPageRoute<String>(
-          builder: (_) => NativeLivenessView(config: config),
-        ),
-      );
-    } else {
-      capturedImagePath = await FlutterLivenessDetectionRandomizedPlugin
-          .instance
-          .livenessDetection(context: context, config: config);
-    }
 
     // User cancelled
     if (capturedImagePath == null) return null;
@@ -162,7 +209,9 @@ class LuxandLiveness {
       final response = await api.checkLiveness(imageFile);
 
       if (exportCaptures) {
-        await _LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
+        await _LivenessCaptureExporter.export(
+          rawCapturePath: capturedImagePath,
+        );
       }
 
       return LuxandLivenessResult.success(
@@ -172,7 +221,9 @@ class LuxandLiveness {
       );
     } catch (e) {
       if (exportCaptures) {
-        await _LivenessCaptureExporter.export(rawCapturePath: capturedImagePath);
+        await _LivenessCaptureExporter.export(
+          rawCapturePath: capturedImagePath,
+        );
       }
       return LuxandLivenessResult.failure(e.toString());
     }
